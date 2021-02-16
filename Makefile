@@ -11,9 +11,9 @@ LIB = lib/launchpad_pro.a
 OBJECTS = $(addprefix $(BUILDDIR)/, $(addsuffix .o, $(basename $(SOURCES))))
 
 # output files
-SYX = $(BUILDDIR)/launchpad_pro.syx
-ELF = $(BUILDDIR)/launchpad_pro.elf
-HEX = $(BUILDDIR)/launchpad_pro.hex
+SYX = $(BUILDDIR)/issho_launchpad_step.syx
+ELF = $(BUILDDIR)/issho_launchpad_step.elf
+HEX = $(BUILDDIR)/issho_launchpad_step.hex
 HEXTOSYX = $(BUILDDIR)/hextosyx
 SIMULATOR = $(BUILDDIR)/simulator
 
