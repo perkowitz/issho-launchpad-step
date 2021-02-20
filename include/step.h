@@ -11,6 +11,11 @@
 #define EXTERNAL 1
 #define OUT_OF_RANGE 255
 #define STAGE_COUNT 8
+#define MIDI_OUT_PORT USBMIDI
+
+#define BEATS_PER_MEASURE 4
+#define TICKS_PER_BEAT 24
+#define TICKS_PER_16TH (TICKS_PER_BEAT/4)
 
 // stage modifiers
 #define DEFAULT_OCTAVE 5
@@ -41,7 +46,8 @@
 #define RIGHT 3
 
 // elements
-#define PLAY_BUTTON 94
+#define PLAY_BUTTON 91
+#define TIMER_BUTTON 94
 #define DISPLAY_BUTTON 10
 
 typedef struct Stage {

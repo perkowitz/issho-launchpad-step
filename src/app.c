@@ -54,9 +54,15 @@ const u8 note_map[8] = { 0, 2, 4, 5, 7, 9, 11, 12 };  // maps the major scale to
 static u8 warning_level = 0;
 static u8 warning_blink = 0;
 
+static bool is_running = false;
 static bool is_playing = false;
 static u8 current_marker = OFF_MARKER;
 static u8 current_note = OUT_OF_RANGE;
+static u8 current_stage = 0;
+
+static int c_measure = 0;
+static u8 c_beat = 0;
+static u8 c_tick = 0;
 
 
 /***** helper functions *****/
@@ -67,12 +73,14 @@ void plot_led(u8 type, u8 index, Color color) {
 	hal_plot_led(type, index, color.red, color.green, color.blue);
 }
 
-void warning(u8 level) {
-	Color color = palette[BLACK];
-	if (level < PSIZE) {
-		color = palette[level];
+void status_light(u8 palette_index) {
+	if (palette_index < PSIZE) {
+		plot_led(TYPESETUP, 0, palette[palette_index]);
 	}
-    hal_plot_led(TYPESETUP, 0, color.red, color.green, color.blue);
+}
+
+void warning(u8 level) {
+	status_light(level);
     warning_level = level;
     warning_blink = 0;
 }
@@ -319,8 +327,11 @@ void on_pad(u8 index, u8 row, u8 column, u8 value) {
 
 void on_button(u8 index, u8 group, u8 offset, u8 value) {
 	if (index == PLAY_BUTTON) {
-		is_playing = !is_playing;
-		set_button(group, offset, is_playing ? WHITE : BLACK);
+		// only external midi clock for now
+
+	} else if (index == TIMER_BUTTON) {
+			is_playing = !is_playing;
+			set_button(group, offset, is_playing ? WHITE : BLACK);
 
 	} else if (group == MARKER_GROUP) {
 
@@ -362,20 +373,82 @@ void on_button(u8 index, u8 group, u8 offset, u8 value) {
 		}
 
 	} else {
-		set_button(group, offset, BLACK);
+
 	}
 }
 
 
 /***** timing *****/
 
-// pulse is called for every MIDI (or internal) pulse, 96 times per quarter note.
+void tick() {
+
+
+	if (!is_running) {
+//		note_off();
+		return;
+	}
+
+	if (c_tick % TICKS_PER_16TH == 0) {
+
+		if (c_beat == 0 && c_tick == 0) {
+			status_light(WHITE);
+		} else if (c_tick == 0) {
+			status_light(DARK_GRAY);
+		} else {
+			status_light(BLACK);
+		}
+
+		// if it's a tie, do nothing
+		// if it's legato, send previous note off after new note on
+		// otherwise, send previous note off first
+		Stage stage = stages[current_stage];
+		if (stage.tie <= 0) {
+			if (stage.legato <= 0) {
+				note_off();
+			}
+
+			u8 previous_note = current_note;
+			if (stage.note_count > 0 && stage.note != OUT_OF_RANGE) {
+				u8 n = get_note(stage);
+				hal_send_midi(USBMIDI, NOTEON | 0, n, get_velocity(stage));
+				current_note = n;
+			}
+
+			if (stage.legato > 0) {
+				if (previous_note != OUT_OF_RANGE) {
+					hal_send_midi(USBMIDI, NOTEOFF | 0, previous_note, 0);
+				}
+			}
+		}
+
+		debug(1, stage.note_count > 0 ? NOTE_MARKER : OFF_MARKER);
+		debug(2, stage.octave > 0 ? OCTAVE_UP_MARKER : OFF_MARKER);
+		debug(2, stage.octave < 0 ? OCTAVE_DOWN_MARKER : OUT_OF_RANGE);
+		debug(3, stage.velocity > 0 ? VELOCITY_UP_MARKER : OFF_MARKER);
+		debug(3, stage.velocity < 0 ? VELOCITY_DOWN_MARKER : OUT_OF_RANGE);
+		debug(4, stage.legato > 0 ? LEGATO_MARKER : OFF_MARKER);
+		debug(4, stage.tie > 0 ? TIE_MARKER : OUT_OF_RANGE);
+
+
+		current_stage = (current_stage + 1) % STAGE_COUNT;
+	}
+
+	c_tick = (c_tick + 1) % TICKS_PER_BEAT;
+	if (c_tick == 0) {
+		c_beat = (c_beat + 1) % BEATS_PER_MEASURE;
+	}
+	if (c_beat == 0) {
+		c_measure++;
+	}
+
+}
+
+// pulse is called for every internal pulse, 24 times per quarter note.
 void pulse() {
 
 	static int pulse_count = 0;
 
 	if (!is_playing) {
-		note_off();
 		return;
 	}
 
@@ -420,17 +493,17 @@ void pulse() {
 
 void blink() {
 
-	static int blink = 0;
-
-	if (warning_level > 0) {
-		Color color = palette[BLACK];
-		if (warning_blink == 0) {
-			color = palette[warning_level];
-		}
-		hal_plot_led(TYPESETUP, 0, color.red, color.green, color.blue);
-	}
-
-	blink = 255 - blink;
+//	static int blink = 0;
+//
+//	if (warning_level > 0) {
+//		Color color = palette[BLACK];
+//		if (warning_blink == 0) {
+//			color = palette[warning_level];
+//		}
+//		hal_plot_led(TYPESETUP, 0, color.red, color.green, color.blue);
+//	}
+//
+//	blink = 255 - blink;
 }
 
 
@@ -493,17 +566,52 @@ void app_surface_event(u8 type, u8 index, u8 value)
 
 void app_midi_event(u8 port, u8 status, u8 d1, u8 d2)
 {
-    // example - MIDI interface functionality for USB "MIDI" port -> DIN port
-    if (port == USBMIDI)
-    {
-        hal_send_midi(DINMIDI, status, d1, d2);
-    }
-    
-    // // example -MIDI interface functionality for DIN -> USB "MIDI" port port
-    if (port == DINMIDI)
-    {
-        hal_send_midi(USBMIDI, status, d1, d2);
-    }
+//	static int ticky = 0;
+
+	switch (status) {
+
+		case MIDISTART:
+			is_running = true;
+			c_measure = c_beat = c_tick = 0;
+//			ticky = 0;
+			plot_led(TYPEPAD, PLAY_BUTTON, palette[WHITE]);
+			break;
+
+		case MIDISTOP:
+			is_running = false;
+			note_off();
+			plot_led(TYPEPAD, PLAY_BUTTON, palette[DARK_GRAY]);
+			break;
+
+		case MIDICONTINUE:
+			is_running = true;
+			plot_led(TYPEPAD, PLAY_BUTTON, palette[WHITE]);
+			break;
+
+		case MIDITIMINGCLOCK:
+			if (is_running) {
+//				int tocky = (ticky + 88) % 96;
+//				plot_led(TYPEPAD, ticky, palette[WHITE]);
+//				plot_led(TYPEPAD, tocky, palette[BLACK]);
+//				ticky = (ticky + 1) % 96;
+				tick();
+			}
+			break;
+
+	}
+
+
+//    // example - MIDI interface functionality for USB "MIDI" port -> DIN port
+//    if (port == USBMIDI)
+//    {
+//        hal_send_midi(DINMIDI, status, d1, d2);
+//    }
+//
+//    // // example -MIDI interface functionality for DIN -> USB "MIDI" port port
+//    if (port == DINMIDI)
+//    {
+//        hal_send_midi(USBMIDI, status, d1, d2);
+//    }
 }
 
 //______________________________________________________________________________
