@@ -71,6 +71,7 @@ static u8 c_tick = 0;
 
 #define send_midi(s, d1, d2)    (hal_send_midi(MIDI_OUT_PORT, (s), (d1), (d2)))
 
+
 void plot_led(u8 type, u8 index, Color color) {
 	hal_plot_led(type, index, color.red, color.green, color.blue);
 }
@@ -78,6 +79,20 @@ void plot_led(u8 type, u8 index, Color color) {
 void draw_by_index(u8 index, u8 c) {
 	Color color = palette[c];
 	hal_plot_led(TYPEPAD, index, color.red, color.green, color.blue);
+}
+
+void plot_button(u8 group, u8 offset, u8 c) {
+	if (is_button(group, offset)) {
+		u8 index = button_index(group, offset);
+		draw_by_index(index, c);
+	}
+}
+
+void draw_pad(u8 row, u8 column, u8 c) {
+	if (is_pad(row, column)) {
+		u8 index = pad_index(row, column);
+		draw_by_index(index, c);
+	}
 }
 
 void status_light(u8 palette_index) {
@@ -101,9 +116,13 @@ void debug(u8 index, u8 level) {
 
 /***** midi *****/
 
+void midi_note(u8 channel, u8 note, u8 velocity) {
+	send_midi(NOTEON | channel, note, velocity);
+}
+
 void all_notes_off(u8 channel) {
-	send_midi(CC, MIDI_ALL_NOTES_OFF_CC, 0);
-	send_midi(CC, MIDI_RESET_ALL_CONTROLLERS, 0);
+	send_midi(CC | channel, MIDI_ALL_NOTES_OFF_CC, 0);
+	send_midi(CC | channel, MIDI_RESET_ALL_CONTROLLERS, 0);
 }
 
 /***** pads (the central grid) *****/
@@ -224,6 +243,14 @@ u8 get_button(u8 group, u8 offset) {
 
 /***** draw *****/
 
+void clear_pads() {
+	for (int row = 0; row < ROW_COUNT; row++) {
+		for (int column = 0; column < COLUMN_COUNT; column++) {
+			draw_pad(row, column, BLACK);
+		}
+	}
+}
+
 void draw_markers() {
 	set_button(MARKER_GROUP, 0, OFF_MARKER);
 	set_button(MARKER_GROUP, 1, NOTE_MARKER);
@@ -257,6 +284,31 @@ void draw_buttons() {
 	draw_button(SETTINGS_BUTTON);
 }
 
+void draw_pads() {
+	for (int row = 0; row < ROW_COUNT; row++) {
+		for (int column = 0; column < COLUMN_COUNT; column++) {
+			u8 c = get_pad(row, column);
+			draw_pad(row, column, c);
+		}
+	}
+
+}
+
+void draw_settings() {
+	int i = 0;
+	u8 c = DARK_GRAY;
+	for (int row = 1; row >= 0; row--) {
+		for (int column = 0; column < COLUMN_COUNT; column++) {
+			c = DARK_GRAY;
+			if (i == midi_channel) {
+				c = WHITE;
+			}
+			draw_pad(row, column, c);
+			i++;
+		}
+	}
+}
+
 void draw() {
 	draw_buttons();
 	draw_markers();
@@ -280,7 +332,7 @@ u8 get_velocity(Stage stage) {
 
 void note_off() {
 	if (current_note != OUT_OF_RANGE) {
-		hal_send_midi(USBMIDI, NOTEOFF | 0, current_note, 0);
+		hal_send_midi(USBMIDI, NOTEOFF | midi_channel, current_note, 0);
 		current_note = OUT_OF_RANGE;
 	}
 }
@@ -347,6 +399,20 @@ void update_stage(u8 row, u8 column, u8 marker, bool turn_on) {
 void on_pad(u8 index, u8 row, u8 column, u8 value) {
 
 	if (value) {
+		if (in_settings) {
+			u8 c = midi_channel;
+			if (row == 1) {
+				c = column;
+			} else if (row == 0) {
+				c = column + 8;
+			}
+			if (c != midi_channel) {
+				midi_channel = c;
+				draw_settings();
+			}
+			return;
+		}
+
 		u8 previous = get_pad(row, column);
 		bool turn_on = (previous != current_marker);
 
@@ -379,6 +445,17 @@ void on_button(u8 index, u8 group, u8 offset, u8 value) {
 			draw_by_index(PANIC_BUTTON, PANIC_BUTTON_OFF_COLOR);
 		}
 
+	} else if (index == SETTINGS_BUTTON) {
+		if (value) {
+			in_settings = true;
+			draw_by_index(PANIC_BUTTON, PANIC_BUTTON_ON_COLOR);
+			clear_pads();
+			draw_settings();
+		} else {
+			in_settings = false;
+			draw_by_index(PANIC_BUTTON, PANIC_BUTTON_OFF_COLOR);
+			draw_pads();
+		}
 
 	} else if (index == TIMER_BUTTON) {
 		if (value) {
@@ -465,13 +542,13 @@ void tick() {
 			u8 previous_note = current_note;
 			if (stage.note_count > 0 && stage.note != OUT_OF_RANGE) {
 				u8 n = get_note(stage);
-				hal_send_midi(USBMIDI, NOTEON | 0, n, get_velocity(stage));
+				hal_send_midi(USBMIDI, NOTEON | midi_channel, n, get_velocity(stage));
 				current_note = n;
 			}
 
 			if (stage.legato > 0) {
 				if (previous_note != OUT_OF_RANGE) {
-					hal_send_midi(USBMIDI, NOTEOFF | 0, previous_note, 0);
+					hal_send_midi(USBMIDI, NOTEOFF | midi_channel, previous_note, 0);
 				}
 			}
 		}
@@ -524,13 +601,13 @@ void pulse() {
 		u8 previous_note = current_note;
 		if (current.note_count > 0 && current.note != OUT_OF_RANGE) {
 			u8 n = get_note(current);
-			hal_send_midi(USBMIDI, NOTEON | 0, n, get_velocity(current));
+			hal_send_midi(USBMIDI, NOTEON | midi_channel, n, get_velocity(current));
 			current_note = n;
 		}
 
 		if (current.legato > 0) {
 			if (previous_note != OUT_OF_RANGE) {
-				hal_send_midi(USBMIDI, NOTEOFF | 0, previous_note, 0);
+				hal_send_midi(USBMIDI, NOTEOFF | midi_channel, previous_note, 0);
 			}
 		}
 	}

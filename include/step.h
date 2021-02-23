@@ -1,6 +1,8 @@
 #ifndef LAUNCHPAD_STEP_H
 #define LAUNCHPAD_STEP_H
 
+#include <stdbool.h>
+
 /***** launchpad constants *****/
 #define BUTTON_COUNT 100
 #define ROW_COUNT 8
@@ -110,6 +112,20 @@ typedef struct Color {
 #define SKY_BLUE 20
 #define PINK 21
 #define DIM_PINK 22
+
+
+/***** function declarations *****/
+
+// buttons
+bool is_button(u8 group, u8 offset);
+u8 button_index(u8 group, u8 offset);
+
+// pads
+u8 pad_index(u8 row, u8 column);
+bool is_pad(u8 row, u8 column);
+
+// drawing
+void plot_button(u8 group, u8 offset, u8 c);
 
 
 
