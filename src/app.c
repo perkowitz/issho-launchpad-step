@@ -56,6 +56,8 @@ static u8 warning_blink = 0;
 
 static bool is_running = false;
 static bool is_playing = false;
+static bool in_settings = false;
+static u8 midi_channel = 0;
 static u8 current_marker = OFF_MARKER;
 static u8 current_note = OUT_OF_RANGE;
 static u8 current_stage = 0;
@@ -67,10 +69,15 @@ static u8 c_tick = 0;
 
 /***** helper functions *****/
 
-#define send_midi(s, d1, d2)    (hal_send_midi(lp_midi_port, (s), (d1), (d2)))
+#define send_midi(s, d1, d2)    (hal_send_midi(MIDI_OUT_PORT, (s), (d1), (d2)))
 
 void plot_led(u8 type, u8 index, Color color) {
 	hal_plot_led(type, index, color.red, color.green, color.blue);
+}
+
+void draw_by_index(u8 index, u8 c) {
+	Color color = palette[c];
+	hal_plot_led(TYPEPAD, index, color.red, color.green, color.blue);
 }
 
 void status_light(u8 palette_index) {
@@ -90,6 +97,13 @@ void debug(u8 index, u8 level) {
 	if (DEBUG && level != OUT_OF_RANGE) {
 		plot_led(TYPEPAD, (index + 1) * 10, palette[level]);
 	}
+}
+
+/***** midi *****/
+
+void all_notes_off(u8 channel) {
+	send_midi(CC, MIDI_ALL_NOTES_OFF_CC, 0);
+	send_midi(CC, MIDI_RESET_ALL_CONTROLLERS, 0);
 }
 
 /***** pads (the central grid) *****/
@@ -223,6 +237,31 @@ void draw_markers() {
 	set_button(RIGHT, 0, current_marker);
 }
 
+void draw_button(u8 button_index) {
+	switch (button_index) {
+		case PLAY_BUTTON:
+			draw_by_index(button_index, is_playing ? BUTTON_ON_COLOR : BUTTON_OFF_COLOR);
+			break;
+		case PANIC_BUTTON:
+			draw_by_index(button_index, PANIC_BUTTON_OFF_COLOR);
+			break;
+		case SETTINGS_BUTTON:
+			draw_by_index(button_index, in_settings ? BUTTON_ON_COLOR : BUTTON_OFF_COLOR);
+			break;
+	}
+}
+
+void draw_buttons() {
+	draw_button(PLAY_BUTTON);
+	draw_button(PANIC_BUTTON);
+	draw_button(SETTINGS_BUTTON);
+}
+
+void draw() {
+	draw_buttons();
+	draw_markers();
+
+}
 
 /***** stages *****/
 
@@ -325,51 +364,67 @@ void on_pad(u8 index, u8 row, u8 column, u8 value) {
 	}
 }
 
+/**
+ * on_button handles button events. when value=0, button was released.
+ */
 void on_button(u8 index, u8 group, u8 offset, u8 value) {
 	if (index == PLAY_BUTTON) {
 		// only external midi clock for now
 
+	} else if (index == PANIC_BUTTON) {
+		if (value) {
+			all_notes_off(midi_channel);
+			draw_by_index(PANIC_BUTTON, PANIC_BUTTON_ON_COLOR);
+		} else {
+			draw_by_index(PANIC_BUTTON, PANIC_BUTTON_OFF_COLOR);
+		}
+
+
 	} else if (index == TIMER_BUTTON) {
+		if (value) {
 			is_playing = !is_playing;
-			set_button(group, offset, is_playing ? WHITE : BLACK);
+			draw_button(TIMER_BUTTON);
+		}
 
 	} else if (group == MARKER_GROUP) {
 
-		u8 m = get_button(group, offset);
-		u8 n = OUT_OF_RANGE;
+		if (value) {
+			u8 m = get_button(group, offset);
+			u8 n = OUT_OF_RANGE;
 
-		// some markers require clever fooferaw
-		switch (m) {
-			case SHARP_MARKER:
-				if (current_marker == SHARP_MARKER) {
-					n = FLAT_MARKER;
-				} else {
-					n = SHARP_MARKER;
-				}
-				break;
-			case OCTAVE_UP_MARKER:
-				if (current_marker == OCTAVE_UP_MARKER) {
-					n = OCTAVE_DOWN_MARKER;
-				} else {
-					n = OCTAVE_UP_MARKER;
-				}
-				break;
-			case VELOCITY_UP_MARKER:
-				if (current_marker == VELOCITY_UP_MARKER) {
-					n = VELOCITY_DOWN_MARKER;
-				} else {
-					n = VELOCITY_UP_MARKER;
-				}
-				break;
-			default:
-				n = m;
-				break;
-		}
+			// some markers require clever fooferaw
+			switch (m) {
+				case SHARP_MARKER:
+					if (current_marker == SHARP_MARKER) {
+						n = FLAT_MARKER;
+					} else {
+						n = SHARP_MARKER;
+					}
+					break;
+				case OCTAVE_UP_MARKER:
+					if (current_marker == OCTAVE_UP_MARKER) {
+						n = OCTAVE_DOWN_MARKER;
+					} else {
+						n = OCTAVE_UP_MARKER;
+					}
+					break;
+				case VELOCITY_UP_MARKER:
+					if (current_marker == VELOCITY_UP_MARKER) {
+						n = VELOCITY_DOWN_MARKER;
+					} else {
+						n = VELOCITY_UP_MARKER;
+					}
+					break;
+				default:
+					n = m;
+					break;
+			}
 
-		// display current marker
-		if (n != OUT_OF_RANGE) {
-			plot_led(TYPEPAD, DISPLAY_BUTTON, palette[n]);
-			current_marker = n;
+			// display current marker
+			if (n != OUT_OF_RANGE) {
+				plot_led(TYPEPAD, DISPLAY_BUTTON, palette[n]);
+				current_marker = n;
+			}
 		}
 
 	} else {
@@ -516,20 +571,18 @@ void app_surface_event(u8 type, u8 index, u8 value)
         case  TYPEPAD:
         {
 
-        	if (value) {
-        		u8 row = index_to_row(index);
-        		u8 column = index_to_column(index);
-        		if (is_pad(row, column)) {
-        			on_pad(index, row, column, value);
-        		} else {
-        			u8 group = index_to_group(index);
-        			u8 offset = index_to_offset(index);
-        			if (is_button(group, offset)) {
-        				on_button(index, group, offset, value);
-        			}
+			u8 row = index_to_row(index);
+			u8 column = index_to_column(index);
+			if (is_pad(row, column)) {
+				on_pad(index, row, column, value);
+			} else {
+				u8 group = index_to_group(index);
+				u8 offset = index_to_offset(index);
+				if (is_button(group, offset)) {
+					on_button(index, group, offset, value);
+				}
 
-        		}
-        	}
+			}
 
 //            hal_send_midi(USBMIDI, NOTEON | 0, index, value);
 
@@ -572,7 +625,7 @@ void app_midi_event(u8 port, u8 status, u8 d1, u8 d2)
 
 		case MIDISTART:
 			is_running = true;
-			c_measure = c_beat = c_tick = 0;
+			c_measure = c_beat = c_tick = current_stage = 0;
 //			ticky = 0;
 			plot_led(TYPEPAD, PLAY_BUTTON, palette[WHITE]);
 			break;
@@ -743,7 +796,7 @@ void app_init(const u16 *adc_raw)
 {
 
 	set_colors();
-	draw_markers();
+	draw();
 
 	for (int s = 0; s < 8; s++) {
 		stages[s] = (Stage) { 0, OUT_OF_RANGE, 0, 0, 0, 0, 0, 0, 0 };

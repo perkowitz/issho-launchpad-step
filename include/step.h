@@ -13,6 +13,10 @@
 #define STAGE_COUNT 8
 #define MIDI_OUT_PORT USBMIDI
 
+#define MIDI_ALL_NOTES_OFF_CC 120
+#define MIDI_RESET_ALL_CONTROLLERS 121
+
+
 #define BEATS_PER_MEASURE 4
 #define TICKS_PER_BEAT 24
 #define TICKS_PER_16TH (TICKS_PER_BEAT/4)
@@ -39,6 +43,12 @@
 #define LEGATO_MARKER DARK_GRAY
 #define RANDOM_MARKER YELLOW
 
+// other element colors
+#define BUTTON_OFF_COLOR DARK_GRAY
+#define BUTTON_ON_COLOR WHITE
+#define PANIC_BUTTON_OFF_COLOR DIM_RED
+#define PANIC_BUTTON_ON_COLOR WHITE
+
 // button groups
 #define TOP 0
 #define BOTTOM 1
@@ -47,6 +57,8 @@
 
 // elements
 #define PLAY_BUTTON 91
+#define PANIC_BUTTON 92
+#define SETTINGS_BUTTON 93
 #define TIMER_BUTTON 94
 #define DISPLAY_BUTTON 10
 
