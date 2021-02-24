@@ -60,7 +60,11 @@ static bool in_settings = false;
 static u8 midi_channel = 0;
 static u8 current_marker = OFF_MARKER;
 static u8 current_note = OUT_OF_RANGE;
+static u8 reset = 1;
+
 static u8 current_stage = 0;
+static u8 current_repeat = 0;
+static u8 current_extension = 0;
 
 static int c_measure = 0;
 static u8 c_beat = 0;
@@ -407,6 +411,7 @@ void on_pad(u8 index, u8 row, u8 column, u8 value) {
 				c = column + 8;
 			}
 			if (c != midi_channel) {
+				all_notes_off(midi_channel);
 				midi_channel = c;
 				draw_settings();
 			}
@@ -492,6 +497,27 @@ void on_button(u8 index, u8 group, u8 offset, u8 value) {
 						n = VELOCITY_UP_MARKER;
 					}
 					break;
+				case EXTEND_MARKER:
+					if (current_marker == EXTEND_MARKER) {
+						n = REPEAT_MARKER;
+					} else {
+						n = EXTEND_MARKER;
+					}
+					break;
+				case TIE_MARKER:
+					if (current_marker == TIE_MARKER) {
+						n = SKIP_MARKER;
+					} else {
+						n = TIE_MARKER;
+					}
+					break;
+				case LEGATO_MARKER:
+					if (current_marker == LEGATO_MARKER) {
+						n = RANDOM_MARKER;
+					} else {
+						n = LEGATO_MARKER;
+					}
+					break;
 				default:
 					n = m;
 					break;
@@ -512,6 +538,14 @@ void on_button(u8 index, u8 group, u8 offset, u8 value) {
 
 /***** timing *****/
 
+/**
+ * tick does all the work for a clock tick.
+ *
+ * - step through the stages
+ * - for each stage, step through its repeats
+ * - for each repeat, step through its extensions
+ *
+ */
 void tick() {
 
 
@@ -522,6 +556,7 @@ void tick() {
 
 	if (c_tick % TICKS_PER_16TH == 0) {
 
+		// flash the status light in time
 		if (c_beat == 0 && c_tick == 0) {
 			status_light(WHITE);
 		} else if (c_tick == 0) {
@@ -530,11 +565,19 @@ void tick() {
 			status_light(BLACK);
 		}
 
-		// if it's a tie, do nothing
+		// reset at the beginning of the measure (if reset is set)
+		// reset=1: reset every measure; rest
+		if (reset != 0 && c_beat == 0 && c_tick == 0) {
+			if (reset == 1 || reset == c_measure % 8) {
+				current_stage = current_repeat = current_extension = 0;
+			}
+		}
+
+		// if it's a tie or extension>0, do nothing
 		// if it's legato, send previous note off after new note on
 		// otherwise, send previous note off first
 		Stage stage = stages[current_stage];
-		if (stage.tie <= 0) {
+		if (stage.tie <= 0 && current_extension == 0) {
 			if (stage.legato <= 0) {
 				note_off();
 			}
@@ -553,6 +596,7 @@ void tick() {
 			}
 		}
 
+		// echo the current step activity on the left buttons
 		debug(1, stage.note_count > 0 ? NOTE_MARKER : OFF_MARKER);
 		debug(2, stage.octave > 0 ? OCTAVE_UP_MARKER : OFF_MARKER);
 		debug(2, stage.octave < 0 ? OCTAVE_DOWN_MARKER : OUT_OF_RANGE);
@@ -561,8 +605,20 @@ void tick() {
 		debug(4, stage.legato > 0 ? LEGATO_MARKER : OFF_MARKER);
 		debug(4, stage.tie > 0 ? TIE_MARKER : OUT_OF_RANGE);
 
+		// now increment current extension
+		// if that would exceed the stage's extension count, increment the repeats count
+		// if that would exceed the stage's repeat count, go to the next stage
+		current_extension++;
+		if (current_extension > stage.extend) {
+			current_extension = 0;
+			current_repeat++;
+		}
+		if (current_repeat > stage.repeat) {
+			current_repeat = 0;
+			current_stage = (current_stage + 1) % STAGE_COUNT;
+		}
 
-		current_stage = (current_stage + 1) % STAGE_COUNT;
+
 	}
 
 	c_tick = (c_tick + 1) % TICKS_PER_BEAT;
