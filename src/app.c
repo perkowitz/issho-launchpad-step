@@ -49,6 +49,7 @@ static u8 g_Buttons[BUTTON_COUNT] = {0};
 static u8 clock = INTERNAL;
 static Stage stages[STAGE_COUNT];
 static Color palette[PSIZE];
+static u8 rainbow[8];
 const u8 note_map[8] = { 0, 2, 4, 5, 7, 9, 11, 12 };  // maps the major scale to note intervals
 
 static u8 warning_level = 0;
@@ -60,6 +61,8 @@ static bool in_settings = false;
 static u8 midi_channel = 0;
 static u8 current_marker = OFF_MARKER;
 static u8 current_note = OUT_OF_RANGE;
+static u8 current_note_column;
+static u8 current_note_row;
 static u8 reset = 1;
 
 static u8 c_stage = 0;
@@ -485,8 +488,10 @@ void on_button(u8 index, u8 group, u8 offset, u8 value) {
 		}
 
 	} else if (index == RESET_BUTTON) {
-		reset = (reset + 1) % 3;
-		draw_button(RESET_BUTTON);
+		if (value) {
+			reset = (reset + 1) % 3;
+			draw_button(RESET_BUTTON);
+		}
 
 	} else if (index == TIMER_BUTTON) {
 		if (value) {
@@ -584,7 +589,7 @@ void tick() {
 
 		// flash the status light in time
 		if (c_beat == 0 && c_tick == 0) {
-			status_light(WHITE);
+			status_light(rainbow[c_measure % 8]);
 		} else if (c_tick == 0) {
 			status_light(DARK_GRAY);
 		} else {
@@ -592,9 +597,9 @@ void tick() {
 		}
 
 		// reset at the beginning of the measure (if reset is set)
-		// reset=1: reset every measure; rest
-		if (reset != 0 && c_beat == 0 && c_tick == 0) {
-			if (reset == 1 || reset == c_measure % 8) {
+		// reset=1: reset every measure; reset=2: every other measure
+		if (c_beat == 0 && c_tick == 0) {
+			if (reset == 1 || (reset == 2 && c_measure % 2 == 0)) {
 				c_stage = c_repeat = c_extend = 0;
 			}
 		}
@@ -602,23 +607,30 @@ void tick() {
 		// if it's a tie or extension>0, do nothing
 		// if it's legato, send previous note off after new note on
 		// otherwise, send previous note off first
+		// also highlight the current playing note on pads in PLAYING_NOTE_COLOR
+		// and then turn it back to NOTE_MARKER when it stops
 		Stage stage = stages[c_stage];
 		if (stage.tie <= 0 && c_extend == 0) {
-			if (stage.legato <= 0) {
+			if (stage.legato <= 0 && current_note != OUT_OF_RANGE) {
 				note_off();
+				draw_pad(current_note_row, current_note_column, NOTE_MARKER);
 			}
 
 			u8 previous_note = current_note;
+			u8 previous_note_row = current_note_row;
+			u8 previous_note_column = current_note_column;
 			if (stage.note_count > 0 && stage.note != OUT_OF_RANGE) {
 				u8 n = get_note(stage);
 				hal_send_midi(USBMIDI, NOTEON | midi_channel, n, get_velocity(stage));
+				draw_pad(stage.note, c_stage, PLAYING_NOTE_COLOR);
 				current_note = n;
+				current_note_row = stage.note;
+				current_note_column = c_stage;
 			}
 
-			if (stage.legato > 0) {
-				if (previous_note != OUT_OF_RANGE) {
-					hal_send_midi(USBMIDI, NOTEOFF | midi_channel, previous_note, 0);
-				}
+			if (stage.legato > 0 && previous_note != OUT_OF_RANGE) {
+				hal_send_midi(USBMIDI, NOTEOFF | midi_channel, previous_note, 0);
+				draw_pad(previous_note_row, previous_note_column, NOTE_MARKER);
 			}
 		}
 
@@ -651,7 +663,7 @@ void tick() {
 	if (c_tick == 0) {
 		c_beat = (c_beat + 1) % BEATS_PER_MEASURE;
 	}
-	if (c_beat == 0) {
+	if (c_beat == 0 && c_tick == 0) {
 		c_measure++;
 	}
 
@@ -948,6 +960,15 @@ void set_colors() {
 	palette[SKY_BLUE] = (Color){8, 18, 63};
 	palette[PINK] = (Color){63, 16, 16};
 	palette[DIM_PINK] = (Color){20, 6, 6};
+
+	rainbow[0] = WHITE;
+	rainbow[1] = RED;
+	rainbow[2] = ORANGE;
+	rainbow[3] = YELLOW;
+	rainbow[4] = GREEN;
+	rainbow[5] = CYAN;
+	rainbow[6] = BLUE;
+	rainbow[7] = PURPLE;
 
 }
 
