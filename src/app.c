@@ -62,9 +62,9 @@ static u8 current_marker = OFF_MARKER;
 static u8 current_note = OUT_OF_RANGE;
 static u8 reset = 1;
 
-static u8 current_stage = 0;
-static u8 current_repeat = 0;
-static u8 current_extension = 0;
+static u8 c_stage = 0;
+static u8 c_repeat = 0;
+static u8 c_extend = 0;
 
 static int c_measure = 0;
 static u8 c_beat = 0;
@@ -279,6 +279,15 @@ void draw_button(u8 button_index) {
 		case SETTINGS_BUTTON:
 			draw_by_index(button_index, in_settings ? BUTTON_ON_COLOR : BUTTON_OFF_COLOR);
 			break;
+		case RESET_BUTTON:
+			u8 c = RESET_BUTTON_OFF_COLOR;
+			if (reset == 1) {
+				c = RESET_BUTTON_1_COLOR;
+			} else if (reset == 2) {
+				c = RESET_BUTTON_2_COLOR;
+			}
+			draw_by_index(button_index, c);
+			break;
 	}
 }
 
@@ -286,6 +295,7 @@ void draw_buttons() {
 	draw_button(PLAY_BUTTON);
 	draw_button(PANIC_BUTTON);
 	draw_button(SETTINGS_BUTTON);
+	draw_button(RESET_BUTTON);
 }
 
 void draw_pads() {
@@ -453,14 +463,18 @@ void on_button(u8 index, u8 group, u8 offset, u8 value) {
 	} else if (index == SETTINGS_BUTTON) {
 		if (value) {
 			in_settings = true;
-			draw_by_index(PANIC_BUTTON, PANIC_BUTTON_ON_COLOR);
+			draw_by_index(SETTINGS_BUTTON, BUTTON_ON_COLOR);
 			clear_pads();
 			draw_settings();
 		} else {
 			in_settings = false;
-			draw_by_index(PANIC_BUTTON, PANIC_BUTTON_OFF_COLOR);
+			draw_by_index(SETTINGS_BUTTON, BUTTON_OFF_COLOR);
 			draw_pads();
 		}
+
+	} else if (index == RESET_BUTTON) {
+		reset = (reset + 1) % 3;
+		draw_button(RESET_BUTTON);
 
 	} else if (index == TIMER_BUTTON) {
 		if (value) {
@@ -569,15 +583,15 @@ void tick() {
 		// reset=1: reset every measure; rest
 		if (reset != 0 && c_beat == 0 && c_tick == 0) {
 			if (reset == 1 || reset == c_measure % 8) {
-				current_stage = current_repeat = current_extension = 0;
+				c_stage = c_repeat = c_extend = 0;
 			}
 		}
 
 		// if it's a tie or extension>0, do nothing
 		// if it's legato, send previous note off after new note on
 		// otherwise, send previous note off first
-		Stage stage = stages[current_stage];
-		if (stage.tie <= 0 && current_extension == 0) {
+		Stage stage = stages[c_stage];
+		if (stage.tie <= 0 && c_extend == 0) {
 			if (stage.legato <= 0) {
 				note_off();
 			}
@@ -608,14 +622,14 @@ void tick() {
 		// now increment current extension
 		// if that would exceed the stage's extension count, increment the repeats count
 		// if that would exceed the stage's repeat count, go to the next stage
-		current_extension++;
-		if (current_extension > stage.extend) {
-			current_extension = 0;
-			current_repeat++;
+		c_extend++;
+		if (c_extend > stage.extend) {
+			c_extend = 0;
+			c_repeat++;
 		}
-		if (current_repeat > stage.repeat) {
-			current_repeat = 0;
-			current_stage = (current_stage + 1) % STAGE_COUNT;
+		if (c_repeat > stage.repeat) {
+			c_repeat = 0;
+			c_stage = (c_stage + 1) % STAGE_COUNT;
 		}
 
 
@@ -758,7 +772,7 @@ void app_midi_event(u8 port, u8 status, u8 d1, u8 d2)
 
 		case MIDISTART:
 			is_running = true;
-			c_measure = c_beat = c_tick = current_stage = 0;
+			c_measure = c_beat = c_tick = c_stage = 0;
 //			ticky = 0;
 			plot_led(TYPEPAD, PLAY_BUTTON, palette[WHITE]);
 			break;

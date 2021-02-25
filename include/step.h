@@ -50,6 +50,9 @@
 #define BUTTON_ON_COLOR WHITE
 #define PANIC_BUTTON_OFF_COLOR DIM_RED
 #define PANIC_BUTTON_ON_COLOR WHITE
+#define RESET_BUTTON_OFF_COLOR DARK_GRAY
+#define RESET_BUTTON_1_COLOR DIM_RED
+#define RESET_BUTTON_2_COLOR RED
 
 // button groups
 #define TOP 0
@@ -62,6 +65,7 @@
 #define PANIC_BUTTON 92
 #define SETTINGS_BUTTON 93
 #define TIMER_BUTTON 94
+#define RESET_BUTTON 97
 #define DISPLAY_BUTTON 10
 
 typedef struct Stage {
