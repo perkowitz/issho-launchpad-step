@@ -269,6 +269,8 @@ void draw_markers() {
 }
 
 void draw_button(u8 button_index) {
+	u8 c;
+
 	switch (button_index) {
 		case PLAY_BUTTON:
 			draw_by_index(button_index, is_playing ? BUTTON_ON_COLOR : BUTTON_OFF_COLOR);
@@ -280,7 +282,7 @@ void draw_button(u8 button_index) {
 			draw_by_index(button_index, in_settings ? BUTTON_ON_COLOR : BUTTON_OFF_COLOR);
 			break;
 		case RESET_BUTTON:
-			u8 c = RESET_BUTTON_OFF_COLOR;
+			c = RESET_BUTTON_OFF_COLOR;
 			if (reset == 1) {
 				c = RESET_BUTTON_1_COLOR;
 			} else if (reset == 2) {
@@ -360,8 +362,18 @@ void update_stage(u8 row, u8 column, u8 marker, bool turn_on) {
 
 	switch (marker) {
 		case NOTE_MARKER:
+			if (turn_on && stages[column].note_count > 0) {
+				u8 old_note = stages[column].note;
+				stages[column].note_count--;
+				stages[column].note = OUT_OF_RANGE;
+				set_pad(old_note, column, OFF_MARKER);
+			}
 			stages[column].note_count += inc;
-			stages[column].note = row;
+			if (turn_on) {
+				stages[column].note = row;
+			} else {
+				stages[column].note = OUT_OF_RANGE;
+			}
 			break;
 
 		case SHARP_MARKER:
