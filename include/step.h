@@ -13,6 +13,7 @@
 #define EXTERNAL 1
 #define OUT_OF_RANGE 255
 #define STAGE_COUNT 8
+#define PATTERN_COUNT 8
 #define MIDI_OUT_PORT USBMIDI
 
 #define MIDI_ALL_NOTES_OFF_CC 120
@@ -60,6 +61,8 @@
 #define BOTTOM 1
 #define LEFT 2
 #define RIGHT 3
+#define GROUP_COUNT 4
+#define OFFSET_COUNT 8
 
 // elements
 #define PLAY_BUTTON 91
@@ -67,7 +70,7 @@
 #define SETTINGS_BUTTON 93
 #define TIMER_BUTTON 94
 #define RESET_BUTTON 97
-#define DISPLAY_BUTTON 10
+#define DISPLAY_BUTTON 1
 
 typedef struct Stage {
 	s8 note_count;
@@ -80,6 +83,12 @@ typedef struct Stage {
 	s8 tie;
 	s8 legato;
 } Stage;
+
+typedef struct Pattern {
+	u8 reset;
+	u8 grid[ROW_COUNT][COLUMN_COUNT];
+	u8 mods[ROW_COUNT];
+} Pattern;
 
 /***** colors *****/
 

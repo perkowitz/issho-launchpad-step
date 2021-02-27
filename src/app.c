@@ -45,12 +45,15 @@
 
 /***** global variables *****/
 static const u16 *g_ADC = 0;   // ADC frame pointer
-static u8 g_Buttons[BUTTON_COUNT] = {0};
+static u8 hw_buttons[BUTTON_COUNT] = {0};
 static u8 clock = INTERNAL;
 static Stage stages[STAGE_COUNT];
 static Color palette[PSIZE];
 static u8 rainbow[8];
 const u8 note_map[8] = { 0, 2, 4, 5, 7, 9, 11, 12 };  // maps the major scale to note intervals
+
+static Pattern patterns[PATTERN_COUNT];
+static u8 c_pattern = 0;
 
 static u8 warning_level = 0;
 static u8 warning_blink = 0;
@@ -78,29 +81,22 @@ static u8 c_tick = 0;
 
 #define send_midi(s, d1, d2)    (hal_send_midi(MIDI_OUT_PORT, (s), (d1), (d2)))
 
-
+/**
+ * plot_led lights up a hardware button with a color.
+ */
 void plot_led(u8 type, u8 index, Color color) {
-	hal_plot_led(type, index, color.red, color.green, color.blue);
+	if (index >= 0 && index < BUTTON_COUNT) {
+		hal_plot_led(type, index, color.red, color.green, color.blue);
+	}
 }
 
 void draw_by_index(u8 index, u8 c) {
-	Color color = palette[c];
-	hal_plot_led(TYPEPAD, index, color.red, color.green, color.blue);
-}
-
-void plot_button(u8 group, u8 offset, u8 c) {
-	if (is_button(group, offset)) {
-		u8 index = button_index(group, offset);
-		draw_by_index(index, c);
+	if (index >= 0 && index < BUTTON_COUNT && c >= 0 && c < PSIZE) {
+		Color color = palette[c];
+		hal_plot_led(TYPEPAD, index, color.red, color.green, color.blue);
 	}
 }
 
-void draw_pad(u8 row, u8 column, u8 c) {
-	if (is_pad(row, column)) {
-		u8 index = pad_index(row, column);
-		draw_by_index(index, c);
-	}
-}
 
 void status_light(u8 palette_index) {
 	if (palette_index < PSIZE) {
@@ -121,6 +117,7 @@ void debug(u8 index, u8 level) {
 	}
 }
 
+
 /***** midi *****/
 
 void midi_note(u8 channel, u8 note, u8 velocity) {
@@ -132,119 +129,166 @@ void all_notes_off(u8 channel) {
 	send_midi(CC | channel, MIDI_RESET_ALL_CONTROLLERS, 0);
 }
 
-/***** pads (the central grid) *****/
 
+/***** pads: functions for setting colors on the central hardware grid *****/
+
+/**
+ * pad_index computes the button index from the row and column.
+ */
 u8 pad_index(u8 row, u8 column) {
-	return (row + 1) * 10 + column + 1;
-}
-
-// calculate row from pad index
-// the bottom row is actually the buttons, so check for that and shift by 1
-u8 index_to_row(u8 index) {
-	u8 row = index / 10;
-	if (row < 1 || row > ROW_COUNT) {
+	if (row >= 0 && row < ROW_COUNT && column >= 0 && column < COLUMN_COUNT) {
+		return (row + 1) * 10 + column + 1;
+	} else {
 		return OUT_OF_RANGE;
 	}
-	return row - 1;
 }
 
-// calculate column from pad index
-// 0 and 9 are the left and right buttons
-u8 index_to_column(u8 index) {
-	u8 column = index % 10;
-	if (column < 1 || column > COLUMN_COUNT) {
-		return OUT_OF_RANGE;
+/**
+ * index_to_row_column computes the pad row & column from an index.
+ * Sets values by reference, returns "0" if successful, OUT_OF_RANGE otherwise.
+ */
+u8 index_to_row_column(u8 index, u8 *row, u8 *column) {
+	*row = index / 10 - 1;
+	*column = index % 10 - 1;
+	if (*column >= 0 && *column < COLUMN_COUNT && *row >= 0 && *row < ROW_COUNT) {
+		return 0;
 	}
-	return column - 1;
+	return OUT_OF_RANGE;
 }
 
 bool is_pad(u8 row, u8 column) {
 	return row != OUT_OF_RANGE && column != OUT_OF_RANGE;
 }
 
-void set_pad(u8 row, u8 column, u8 value) {
-	if (is_pad(row, column)) {
-		u8 index = pad_index(row, column);
-		g_Buttons[index] = value;
-		plot_led(TYPEPAD, index, palette[value]);
+/**
+ * draw_pad lights up the pad with the indexed color.
+ */
+void draw_pad(u8 row, u8 column, u8 c) {
+	u8 index = pad_index(row, column);
+	if (index != OUT_OF_RANGE) {
+		draw_by_index(index, c);
 	}
 }
 
-u8 get_pad(u8 row, u8 column) {
-	if (is_pad(row, column)) {
-		u8 index = pad_index(row, column);
-		return g_Buttons[index];
-	}
-	return OUT_OF_RANGE;
-}
+/**
+ * set_pad sets the given pad to a color index.
+ * Both lights up the hardware pad and stores the value in the button array.
+ */
+//void set_pad(u8 row, u8 column, u8 value) {
+//	u8 index = pad_index(row, column);
+//	if (index != OUT_OF_RANGE) {
+//		hw_buttons[index] = value;
+//		draw_by_index(index, value);
+//	}
+//}
+
+/**
+ * get_pad checks the current color of a pad, by looking up the button array.
+ */
+//u8 get_pad(u8 row, u8 column) {
+//	u8 index = pad_index(row, column);
+//	if (index != OUT_OF_RANGE) {
+//		return hw_buttons[index];
+//	}
+//	return OUT_OF_RANGE;
+//}
 
 
-/***** buttons (the buttons around the sides) *****/
+/***** buttons: functions for setting colors for the round buttons on each side *****/
 
+/**
+ * button_index computes the index from the given group and offset.
+ */
 u8 button_index(u8 group, u8 offset) {
-	if (group == TOP) {
-		return 91 + offset;
-	}
-	if (group == BOTTOM) {
-		return 1 + offset;
-	}
-	if (group == LEFT) {
-		return (offset + 1) * 10;
-	}
-	if (group == RIGHT) {
-		return (offset + 1) * 10 + 9;
+	if (group >= 0 && group < GROUP_COUNT && offset >= 0 && offset < OFFSET_COUNT) {
+		switch (group) {
+			case TOP:
+				return 91 + offset;
+			case BOTTOM:
+				return 1 + offset;
+			case LEFT:
+				return (offset + 1) * 10;
+			case RIGHT:
+				return (offset + 1) * 10 + 9;
+		}
 	}
 	return OUT_OF_RANGE;
 }
 
-u8 index_to_group(u8 index) {
+/**
+ * index_to_group_offset computes the group and offset from the index.
+ * Sets values by reference; returns "0" of successful, OUT_OF_RANGE otherwise.
+ */
+u8 index_to_group_offset(u8 index, u8 *group, u8 *offset) {
 	u8 r = index / 10;
 	u8 c = index % 10;
 	if (r == 0) {
-		return BOTTOM;
+		*group = BOTTOM;
+	} else if (r == 9) {
+		*group = TOP;
+	} else if (c == 0) {
+		*group = LEFT;
+	} else if (c == 9) {
+		*group = RIGHT;
+	} else {
+		return OUT_OF_RANGE;
 	}
-	if (r == 9) {
-		return TOP;
+
+	if (*group == TOP || *group == BOTTOM) {
+		*offset = (index % 10) - 1;
+		return 0;
 	}
-	if (c == 0) {
-		return LEFT;
-	}
-	if (c == 9) {
-		return RIGHT;
+	if (*group == LEFT || *group == RIGHT) {
+		*offset = (index / 10) - 1;
+		return 0;
 	}
 	return OUT_OF_RANGE;
-}
-
-u8 index_to_offset(u8 index) {
-	u8 group = index_to_group(index);
-
-	if (group == TOP || group == BOTTOM) {
-		return (index % 10) - 1;
-	}
-	if (group == LEFT || group == RIGHT) {
-		return (index / 10) - 1;
-	}
-	return OUT_OF_RANGE;
-}
-
-bool is_button(u8 group, u8 offset) {
-	return group != OUT_OF_RANGE && offset != OUT_OF_RANGE;
 }
 
 void set_button(u8 group, u8 offset, u8 value) {
-	if (is_button(group, offset)) {
-		u8 index = button_index(group, offset);
-		g_Buttons[index] = value;
-		plot_led(TYPEPAD, index, palette[value]);
+	u8 index = button_index(group, offset);
+	if (index != OUT_OF_RANGE) {
+		hw_buttons[index] = value;
+		draw_by_index(index, value);
 	}
 }
 
 u8 get_button(u8 group, u8 offset) {
-	if (is_button(group, offset)) {
-		u8 index = button_index(group, offset);
-		return g_Buttons[index];
+	u8 index = button_index(group, offset);
+	if (index != OUT_OF_RANGE) {
+		return hw_buttons[index];
 	}
 	return OUT_OF_RANGE;
+}
+
+
+/***** patterns & grids *****/
+
+void set_pattern_grid(u8 p_index, u8 row, u8 column, u8 value) {
+	if (p_index >= 0 && p_index < PATTERN_COUNT &&
+			row >= 0 && row < ROW_COUNT &&
+			column >= 0 && column < COLUMN_COUNT) {
+		patterns[p_index].grid[row][column] = value;
+	}
+}
+
+u8 get_pattern_grid(u8 p_index, u8 row, u8 column) {
+	if (p_index >= 0 && p_index < PATTERN_COUNT &&
+			row >= 0 && row < ROW_COUNT &&
+			column >= 0 && column < COLUMN_COUNT) {
+		return patterns[p_index].grid[row][column];
+	} else {
+		return OUT_OF_RANGE;
+	}
+}
+
+void set_and_draw_grid(u8 row, u8 column, u8 value) {
+	set_pattern_grid(c_pattern, row, column, value);
+	draw_pad(row, column, value);
+}
+
+u8 get_grid(u8 row, u8 column) {
+	return get_pattern_grid(c_pattern, row, column);
 }
 
 
@@ -268,7 +312,7 @@ void draw_markers() {
 	set_button(MARKER_GROUP, 6, TIE_MARKER);
 	set_button(MARKER_GROUP, 7, LEGATO_MARKER);
 	current_marker = NOTE_MARKER;
-	set_button(RIGHT, 0, current_marker);
+	draw_by_index(DISPLAY_BUTTON, current_marker);
 }
 
 void draw_button(u8 button_index) {
@@ -306,7 +350,7 @@ void draw_buttons() {
 void draw_pads() {
 	for (int row = 0; row < ROW_COUNT; row++) {
 		for (int column = 0; column < COLUMN_COUNT; column++) {
-			u8 c = get_pad(row, column);
+			u8 c = get_grid(row, column);
 			draw_pad(row, column, c);
 		}
 	}
@@ -369,7 +413,7 @@ void update_stage(u8 row, u8 column, u8 marker, bool turn_on) {
 				u8 old_note = stages[column].note;
 				stages[column].note_count--;
 				stages[column].note = OUT_OF_RANGE;
-				set_pad(old_note, column, OFF_MARKER);
+				set_and_draw_grid(old_note, column, OFF_MARKER);
 			}
 			stages[column].note_count += inc;
 			if (turn_on) {
@@ -443,18 +487,18 @@ void on_pad(u8 index, u8 row, u8 column, u8 value) {
 			return;
 		}
 
-		u8 previous = get_pad(row, column);
+		u8 previous = get_grid(row, column);
 		bool turn_on = (previous != current_marker);
 
 		// remove the old marker that was at this row
 		update_stage(row, column, previous, false);
 
 		if (turn_on) {
-			set_pad(row, column, current_marker);
+			set_and_draw_grid(row, column, current_marker);
 			// add the new marker
 			update_stage(row, column, current_marker, true);
 		} else {
-			set_pad(row, column, OFF_MARKER);
+			set_and_draw_grid(row, column, OFF_MARKER);
 		}
 
 	}
@@ -742,18 +786,34 @@ void app_surface_event(u8 type, u8 index, u8 value)
         case  TYPEPAD:
         {
 
-			u8 row = index_to_row(index);
-			u8 column = index_to_column(index);
-			if (is_pad(row, column)) {
+
+			u8 row;
+			u8 column;
+			u8 check = index_to_row_column(index, &row, &column);
+			if (check != OUT_OF_RANGE) {
 				on_pad(index, row, column, value);
 			} else {
-				u8 group = index_to_group(index);
-				u8 offset = index_to_offset(index);
-				if (is_button(group, offset)) {
+				u8 group;
+				u8 offset;
+				check = index_to_group_offset(index, &group, &offset);
+				if (check != OUT_OF_RANGE) {
 					on_button(index, group, offset, value);
 				}
-
 			}
+
+//			u8 row = index_to_row(index);
+//			u8 column = index_to_column(index);
+//			if (is_pad(row, column)) {
+//				on_pad(index, row, column, value);
+//			} else {
+//				u8 group = index_to_group(index);
+//				u8 offset = index_to_offset(index);
+//				if (is_button(group, offset)) {
+//					on_button(index, group, offset, value);
+//				}
+//			}
+
+
 
 //            hal_send_midi(USBMIDI, NOTEON | 0, index, value);
 
@@ -779,7 +839,7 @@ void app_surface_event(u8 type, u8 index, u8 value)
             if (value)
             {
                 // save button states to flash (reload them by power cycling the hardware!)
-                hal_write_flash(0, g_Buttons, BUTTON_COUNT);
+                hal_write_flash(0, hw_buttons, BUTTON_COUNT);
             }
         }
         break;
