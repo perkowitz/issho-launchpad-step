@@ -71,6 +71,7 @@
 #define TIMER_BUTTON 94
 #define RESET_BUTTON 97
 #define DISPLAY_BUTTON 1
+#define LOAD_BUTTON 98
 
 typedef struct Stage {
 	s8 note_count;

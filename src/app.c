@@ -170,29 +170,6 @@ void draw_pad(u8 row, u8 column, u8 c) {
 	}
 }
 
-/**
- * set_pad sets the given pad to a color index.
- * Both lights up the hardware pad and stores the value in the button array.
- */
-//void set_pad(u8 row, u8 column, u8 value) {
-//	u8 index = pad_index(row, column);
-//	if (index != OUT_OF_RANGE) {
-//		hw_buttons[index] = value;
-//		draw_by_index(index, value);
-//	}
-//}
-
-/**
- * get_pad checks the current color of a pad, by looking up the button array.
- */
-//u8 get_pad(u8 row, u8 column) {
-//	u8 index = pad_index(row, column);
-//	if (index != OUT_OF_RANGE) {
-//		return hw_buttons[index];
-//	}
-//	return OUT_OF_RANGE;
-//}
-
 
 /***** buttons: functions for setting colors for the round buttons on each side *****/
 
@@ -337,6 +314,9 @@ void draw_button(u8 button_index) {
 			}
 			draw_by_index(button_index, c);
 			break;
+		case LOAD_BUTTON:
+			draw_by_index(button_index, BUTTON_OFF_COLOR);
+			break;
 	}
 }
 
@@ -345,6 +325,7 @@ void draw_buttons() {
 	draw_button(PANIC_BUTTON);
 	draw_button(SETTINGS_BUTTON);
 	draw_button(RESET_BUTTON);
+	draw_button(LOAD_BUTTON);
 }
 
 void draw_pads() {
@@ -467,6 +448,32 @@ void update_stage(u8 row, u8 column, u8 marker, bool turn_on) {
 }
 
 
+/***** save and load *****/
+
+void save() {
+    hal_write_flash(0, (u8*)&patterns, sizeof(patterns));
+}
+
+void load_stages() {
+	for (int s = 0; s < 8; s++) {
+		stages[s] = (Stage) { 0, OUT_OF_RANGE, 0, 0, 0, 0, 0, 0, 0 };
+	}
+	for (int row = 0; row < ROW_COUNT; row++) {
+		for (int column = 0; column < COLUMN_COUNT; column++) {
+			u8 value = get_grid(row, column);
+			update_stage(row, column, value, true);
+			draw_pad(row, column, value);
+		}
+	}
+}
+
+void load() {
+	hal_read_flash(0, (u8*)&patterns, sizeof(patterns));
+	draw();
+	load_stages();
+}
+
+
 /***** handlers *****/
 
 void on_pad(u8 index, u8 row, u8 column, u8 value) {
@@ -535,6 +542,14 @@ void on_button(u8 index, u8 group, u8 offset, u8 value) {
 		if (value) {
 			reset = (reset + 1) % 3;
 			draw_button(RESET_BUTTON);
+		}
+
+	} else if (index == LOAD_BUTTON) {
+		if (value) {
+			draw_by_index(LOAD_BUTTON, BUTTON_ON_COLOR);
+			load();
+		} else {
+			draw_by_index(LOAD_BUTTON, BUTTON_OFF_COLOR);
 		}
 
 	} else if (index == TIMER_BUTTON) {
@@ -836,10 +851,8 @@ void app_surface_event(u8 type, u8 index, u8 value)
             
         case TYPESETUP:
         {
-            if (value)
-            {
-                // save button states to flash (reload them by power cycling the hardware!)
-                hal_write_flash(0, hw_buttons, BUTTON_COUNT);
+            if (value) {
+            	save();
             }
         }
         break;
@@ -1035,14 +1048,18 @@ void set_colors() {
 void app_init(const u16 *adc_raw)
 {
 
-	set_colors();
-	draw();
-
 	for (int s = 0; s < 8; s++) {
 		stages[s] = (Stage) { 0, OUT_OF_RANGE, 0, 0, 0, 0, 0, 0, 0 };
 	}
 
+	set_colors();
 	warning(SKY_BLUE);
+
+//	load();
+	c_pattern = 0;
+	draw();
+
+
 
 //	time_t t;
 //	srand((unsigned) time(&t));
