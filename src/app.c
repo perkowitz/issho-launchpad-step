@@ -51,6 +51,8 @@ static Stage stages[STAGE_COUNT];
 static Color palette[PSIZE];
 static u8 rainbow[8];
 const u8 note_map[8] = { 0, 2, 4, 5, 7, 9, 11, 12 };  // maps the major scale to note intervals
+const u8 marker_map[8] = { OFF_MARKER, NOTE_MARKER, SHARP_MARKER, OCTAVE_UP_MARKER,
+		VELOCITY_UP_MARKER, EXTEND_MARKER, TIE_MARKER, LEGATO_MARKER };
 
 static Pattern patterns[PATTERN_COUNT];
 static u8 c_pattern = 0;
@@ -63,6 +65,7 @@ static bool is_playing = false;
 static bool in_settings = false;
 static u8 midi_channel = 0;
 static u8 current_marker = OFF_MARKER;
+static u8 current_marker_index = 0;
 static u8 current_note = OUT_OF_RANGE;
 static u8 current_note_column;
 static u8 current_note_row;
@@ -222,7 +225,14 @@ u8 index_to_group_offset(u8 index, u8 *group, u8 *offset) {
 	return OUT_OF_RANGE;
 }
 
-void set_button(u8 group, u8 offset, u8 value) {
+void draw_button(u8 group, u8 offset, u8 value) {
+	u8 index = button_index(group, offset);
+	if (index != OUT_OF_RANGE) {
+		draw_by_index(index, value);
+	}
+}
+
+void set_and_draw_button(u8 group, u8 offset, u8 value) {
 	u8 index = button_index(group, offset);
 	if (index != OUT_OF_RANGE) {
 		hw_buttons[index] = value;
@@ -259,6 +269,10 @@ u8 get_pattern_grid(u8 p_index, u8 row, u8 column) {
 	}
 }
 
+void set_grid(u8 row, u8 column, u8 value) {
+	set_pattern_grid(c_pattern, row, column, value);
+}
+
 void set_and_draw_grid(u8 row, u8 column, u8 value) {
 	set_pattern_grid(c_pattern, row, column, value);
 	draw_pad(row, column, value);
@@ -280,19 +294,20 @@ void clear_pads() {
 }
 
 void draw_markers() {
-	set_button(MARKER_GROUP, 0, OFF_MARKER);
-	set_button(MARKER_GROUP, 1, NOTE_MARKER);
-	set_button(MARKER_GROUP, 2, SHARP_MARKER);
-	set_button(MARKER_GROUP, 3, OCTAVE_UP_MARKER);
-	set_button(MARKER_GROUP, 4, VELOCITY_UP_MARKER);
-	set_button(MARKER_GROUP, 5, EXTEND_MARKER);
-	set_button(MARKER_GROUP, 6, TIE_MARKER);
-	set_button(MARKER_GROUP, 7, LEGATO_MARKER);
-	current_marker = NOTE_MARKER;
+	set_and_draw_button(MARKER_GROUP, 0, OFF_MARKER);
+	set_and_draw_button(MARKER_GROUP, 1, NOTE_MARKER);
+	set_and_draw_button(MARKER_GROUP, 2, SHARP_MARKER);
+	set_and_draw_button(MARKER_GROUP, 3, OCTAVE_UP_MARKER);
+	set_and_draw_button(MARKER_GROUP, 4, VELOCITY_UP_MARKER);
+	set_and_draw_button(MARKER_GROUP, 5, EXTEND_MARKER);
+	set_and_draw_button(MARKER_GROUP, 6, TIE_MARKER);
+	set_and_draw_button(MARKER_GROUP, 7, LEGATO_MARKER);
+	current_marker_index = 1;
+	current_marker = marker_map[current_marker_index];
 	draw_by_index(DISPLAY_BUTTON, current_marker);
 }
 
-void draw_button(u8 button_index) {
+void draw_function_button(u8 button_index) {
 	u8 c;
 
 	switch (button_index) {
@@ -315,17 +330,19 @@ void draw_button(u8 button_index) {
 			draw_by_index(button_index, c);
 			break;
 		case LOAD_BUTTON:
+		case CLEAR_BUTTON:
 			draw_by_index(button_index, BUTTON_OFF_COLOR);
 			break;
 	}
 }
 
-void draw_buttons() {
-	draw_button(PLAY_BUTTON);
-	draw_button(PANIC_BUTTON);
-	draw_button(SETTINGS_BUTTON);
-	draw_button(RESET_BUTTON);
-	draw_button(LOAD_BUTTON);
+void draw_function_buttons() {
+	draw_function_button(PLAY_BUTTON);
+	draw_function_button(PANIC_BUTTON);
+	draw_function_button(SETTINGS_BUTTON);
+	draw_function_button(RESET_BUTTON);
+	draw_function_button(LOAD_BUTTON);
+	draw_function_button(CLEAR_BUTTON);
 }
 
 void draw_pads() {
@@ -341,7 +358,7 @@ void draw_pads() {
 void draw_settings() {
 	int i = 0;
 	u8 c = DARK_GRAY;
-	for (int row = 1; row >= 0; row--) {
+	for (int row = SETTINGS_MIDI_ROW_1; row >= SETTINGS_MIDI_ROW_2; row--) {
 		for (int column = 0; column < COLUMN_COUNT; column++) {
 			c = DARK_GRAY;
 			if (i == midi_channel) {
@@ -351,12 +368,22 @@ void draw_settings() {
 			i++;
 		}
 	}
+	for (int column = 0; column < COLUMN_COUNT; column++) {
+		draw_pad(SETTINGS_PATTERN_ROW, column, column == c_pattern ? PATTERN_SELECTED_COLOR : PATTERN_COLOR);
+	}
+}
+
+void draw_patterns() {
+	for (int offset = PATTERNS_OFFSET_LO; offset <= PATTERNS_OFFSET_HI; offset++) {
+		u8 p = offset - PATTERNS_OFFSET_LO;
+		draw_button(PATTERNS_GROUP, offset, p == c_pattern ? PATTERN_SELECTED_COLOR : PATTERN_COLOR);
+	}
 }
 
 void draw() {
-	draw_buttons();
+	draw_function_buttons();
 	draw_markers();
-
+	draw_patterns();
 }
 
 /***** stages *****/
@@ -405,11 +432,11 @@ void update_stage(u8 row, u8 column, u8 marker, bool turn_on) {
 			break;
 
 		case SHARP_MARKER:
-			stages[column].note += inc;
+			stages[column].accidental += inc;
 			break;
 
 		case FLAT_MARKER:
-			stages[column].note -= inc;
+			stages[column].accidental -= inc;
 			break;
 
 		case OCTAVE_UP_MARKER:
@@ -450,26 +477,54 @@ void update_stage(u8 row, u8 column, u8 marker, bool turn_on) {
 
 /***** save and load *****/
 
+void clear_stages() {
+	for (int s = 0; s < 8; s++) {
+		stages[s] = (Stage) { 0, OUT_OF_RANGE, 0, 0, 0, 0, 0, 0, 0 };
+	}
+}
+
+void clear() {
+	clear_stages();
+	for (int p = 0; p < PATTERN_COUNT; p++) {
+		for (int row = 0; row < ROW_COUNT; row++) {
+			for (int column = 0; column < COLUMN_COUNT; column++) {
+				set_pattern_grid(p, row, column, BLACK);
+				if (p == c_pattern) {
+					draw_pad(row, column, BLACK);
+				}
+			}
+		}
+
+	}
+}
+
 void save() {
     hal_write_flash(0, (u8*)&patterns, sizeof(patterns));
 }
 
 void load_stages() {
-	for (int s = 0; s < 8; s++) {
-		stages[s] = (Stage) { 0, OUT_OF_RANGE, 0, 0, 0, 0, 0, 0, 0 };
-	}
 	for (int row = 0; row < ROW_COUNT; row++) {
 		for (int column = 0; column < COLUMN_COUNT; column++) {
 			u8 value = get_grid(row, column);
 			update_stage(row, column, value, true);
-			draw_pad(row, column, value);
+			if (!in_settings) {
+				draw_pad(row, column, value);
+			}
 		}
 	}
 }
 
 void load() {
+	clear();
 	hal_read_flash(0, (u8*)&patterns, sizeof(patterns));
 	draw();
+	load_stages();
+}
+
+void change_pattern(u8 p_index) {
+	c_pattern = p_index;
+	c_stage = c_extend = c_repeat = 0;
+	clear_stages();
 	load_stages();
 }
 
@@ -481,10 +536,13 @@ void on_pad(u8 index, u8 row, u8 column, u8 value) {
 	if (value) {
 		if (in_settings) {
 			u8 c = midi_channel;
-			if (row == 1) {
+			if (row == SETTINGS_MIDI_ROW_1) {
 				c = column;
-			} else if (row == 0) {
+			} else if (row == SETTINGS_MIDI_ROW_1) {
 				c = column + 8;
+			} else if (row == SETTINGS_PATTERN_ROW) {
+				change_pattern(column);
+				draw_settings();
 			}
 			if (c != midi_channel) {
 				all_notes_off(midi_channel);
@@ -541,7 +599,7 @@ void on_button(u8 index, u8 group, u8 offset, u8 value) {
 	} else if (index == RESET_BUTTON) {
 		if (value) {
 			reset = (reset + 1) % 3;
-			draw_button(RESET_BUTTON);
+			draw_function_button(RESET_BUTTON);
 		}
 
 	} else if (index == LOAD_BUTTON) {
@@ -552,17 +610,32 @@ void on_button(u8 index, u8 group, u8 offset, u8 value) {
 			draw_by_index(LOAD_BUTTON, BUTTON_OFF_COLOR);
 		}
 
+	} else if (index == CLEAR_BUTTON) {
+		if (value) {
+			draw_by_index(CLEAR_BUTTON, BUTTON_ON_COLOR);
+			clear();
+		} else {
+			draw_by_index(CLEAR_BUTTON, BUTTON_OFF_COLOR);
+		}
+
 	} else if (index == TIMER_BUTTON) {
 		if (value) {
 			is_playing = !is_playing;
-			draw_button(TIMER_BUTTON);
+			draw_function_button(TIMER_BUTTON);
 		}
+
+	} else if (group == PATTERNS_GROUP && offset >= PATTERNS_OFFSET_LO && offset <= PATTERNS_OFFSET_HI) {
+		change_pattern(offset - PATTERNS_OFFSET_LO);
+		draw_pads();
+		draw_patterns();
 
 	} else if (group == MARKER_GROUP) {
 
 		if (value) {
-			u8 m = get_button(group, offset);
+			u8 m = marker_map[offset];
 			u8 n = OUT_OF_RANGE;
+
+			u8 previous_marker_index = current_marker_index;
 
 			// some markers require clever fooferaw
 			switch (m) {
@@ -609,14 +682,16 @@ void on_button(u8 index, u8 group, u8 offset, u8 value) {
 					}
 					break;
 				default:
+					// neither MARKER_OFF nor MARKER_NOTE have alternate values
 					n = m;
 					break;
 			}
 
-			// display current marker
 			if (n != OUT_OF_RANGE) {
 				plot_led(TYPEPAD, DISPLAY_BUTTON, palette[n]);
 				current_marker = n;
+				current_marker_index = offset;
+				draw_button(MARKER_GROUP, previous_marker_index, marker_map[previous_marker_index]);
 			}
 		}
 
@@ -672,7 +747,9 @@ void tick() {
 		if (stage.tie <= 0 && c_extend == 0) {
 			if (stage.legato <= 0 && current_note != OUT_OF_RANGE) {
 				note_off();
-				draw_pad(current_note_row, current_note_column, NOTE_MARKER);
+				if (!in_settings) {
+					draw_pad(current_note_row, current_note_column, NOTE_MARKER);
+				}
 			}
 
 			u8 previous_note = current_note;
@@ -681,7 +758,9 @@ void tick() {
 			if (stage.note_count > 0 && stage.note != OUT_OF_RANGE) {
 				u8 n = get_note(stage);
 				hal_send_midi(USBMIDI, NOTEON | midi_channel, n, get_velocity(stage));
-				draw_pad(stage.note, c_stage, PLAYING_NOTE_COLOR);
+				if (!in_settings) {
+					draw_pad(stage.note, c_stage, PLAYING_NOTE_COLOR);
+				}
 				current_note = n;
 				current_note_row = stage.note;
 				current_note_column = c_stage;
@@ -689,18 +768,23 @@ void tick() {
 
 			if (stage.legato > 0 && previous_note != OUT_OF_RANGE) {
 				hal_send_midi(USBMIDI, NOTEOFF | midi_channel, previous_note, 0);
-				draw_pad(previous_note_row, previous_note_column, NOTE_MARKER);
+				if (!in_settings) {
+					draw_pad(previous_note_row, previous_note_column, NOTE_MARKER);
+				}
 			}
 		}
 
 		// echo the current step activity on the left buttons
 		debug(1, stage.note_count > 0 ? NOTE_MARKER : OFF_MARKER);
+		debug(1, stage.accidental > 0 ? SHARP_MARKER : OUT_OF_RANGE);
+		debug(1, stage.accidental < 0 ? FLAT_MARKER : OUT_OF_RANGE);
+		debug(1, stage.tie > 0 ? TIE_MARKER : OUT_OF_RANGE);
 		debug(2, stage.octave > 0 ? OCTAVE_UP_MARKER : OFF_MARKER);
 		debug(2, stage.octave < 0 ? OCTAVE_DOWN_MARKER : OUT_OF_RANGE);
 		debug(3, stage.velocity > 0 ? VELOCITY_UP_MARKER : OFF_MARKER);
 		debug(3, stage.velocity < 0 ? VELOCITY_DOWN_MARKER : OUT_OF_RANGE);
-		debug(4, stage.legato > 0 ? LEGATO_MARKER : OFF_MARKER);
-		debug(4, stage.tie > 0 ? TIE_MARKER : OUT_OF_RANGE);
+		debug(3, stage.legato > 0 ? LEGATO_MARKER : OFF_MARKER);
+		debug(3, stage.legato > 0 ? LEGATO_MARKER : OFF_MARKER);
 
 		// now increment current extension
 		// if that would exceed the stage's extension count, increment the repeats count
@@ -778,17 +862,15 @@ void pulse() {
 
 void blink() {
 
-//	static int blink = 0;
-//
-//	if (warning_level > 0) {
-//		Color color = palette[BLACK];
-//		if (warning_blink == 0) {
-//			color = palette[warning_level];
-//		}
-//		hal_plot_led(TYPESETUP, 0, color.red, color.green, color.blue);
-//	}
-//
-//	blink = 255 - blink;
+	static u8 blink = 0;
+
+	if (blink == 0) {
+		draw_button(MARKER_GROUP, current_marker_index, current_marker);
+	} else {
+		draw_button(MARKER_GROUP, current_marker_index, BLACK);
+	}
+
+	blink = 1 - blink;
 }
 
 
@@ -950,7 +1032,7 @@ void app_cable_event(u8 type, u8 value)
 void app_timer_event()
 {
 	#define PULSE_INTERVAL 250
-	#define BLINK_INTERVAL 50
+	#define BLINK_INTERVAL 125
 
     static int tick_count = 0;
 	static int pulse_timer = PULSE_INTERVAL;
@@ -1013,7 +1095,7 @@ void set_colors() {
 	palette[GRAY] = (Color){C_MID, C_MID, C_MID};
 
 	palette[RED] = (Color){C_HI, 0, 0};
-	palette[ORANGE] = (Color){63, 10, 0};
+	palette[ORANGE] = (Color){63, 20, 0};
 	palette[YELLOW] = (Color){C_HI, C_HI, 0};
 	palette[GREEN] = (Color){0, C_HI, 0};
 	palette[CYAN] = (Color){0, C_HI, C_HI};
@@ -1022,7 +1104,7 @@ void set_colors() {
 	palette[MAGENTA] = (Color){C_HI, 0, C_HI};
 
 	palette[DIM_RED] = (Color){C_MID, 0, 0};
-	palette[DIM_ORANGE] = (Color){20, 4, 0};
+	palette[DIM_ORANGE] = (Color){20, 8, 0};
 	palette[DIM_YELLOW] = (Color){C_MID, C_MID, 0};
 	palette[DIM_GREEN] = (Color){0, C_MID, 0};
 	palette[DIM_CYAN] = (Color){0, C_MID, C_MID};
@@ -1031,8 +1113,8 @@ void set_colors() {
 	palette[DIM_MAGENTA] = (Color){C_MID, 0, C_MID};
 
 	palette[SKY_BLUE] = (Color){8, 18, 63};
-	palette[PINK] = (Color){63, 16, 16};
-	palette[DIM_PINK] = (Color){20, 6, 6};
+	palette[PINK] = (Color){32, 13, 22};
+	palette[DIM_PINK] = (Color){16, 7, 11};
 
 	rainbow[0] = WHITE;
 	rainbow[1] = RED;

@@ -55,6 +55,8 @@
 #define RESET_BUTTON_1_COLOR DIM_RED
 #define RESET_BUTTON_2_COLOR RED
 #define PLAYING_NOTE_COLOR WHITE
+#define PATTERN_COLOR DIM_RED
+#define PATTERN_SELECTED_COLOR WHITE
 
 // button groups
 #define TOP 0
@@ -70,8 +72,16 @@
 #define SETTINGS_BUTTON 93
 #define TIMER_BUTTON 94
 #define RESET_BUTTON 97
-#define DISPLAY_BUTTON 1
+#define DISPLAY_BUTTON 10
 #define LOAD_BUTTON 98
+#define CLEAR_BUTTON 89
+
+#define SETTINGS_MIDI_ROW_1 1
+#define SETTINGS_MIDI_ROW_2 0
+#define SETTINGS_PATTERN_ROW 7
+#define PATTERNS_GROUP LEFT
+#define PATTERNS_OFFSET_LO 4
+#define PATTERNS_OFFSET_HI 7
 
 typedef struct Stage {
 	s8 note_count;
