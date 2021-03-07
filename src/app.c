@@ -303,6 +303,14 @@ void clear_pads() {
 	}
 }
 
+void draw_binary_row(u8 row, u8 value) {
+	u8 and = 1;
+	for (int column = 0; column < 8; column++) {
+		draw_pad(row, 7 - column, value & and ? WHITE : DIM_BLUE);
+		and = and << 1;
+	}
+}
+
 void draw_markers() {
 	set_and_draw_button(MARKER_GROUP, 0, OFF_MARKER);
 	set_and_draw_button(MARKER_GROUP, 1, NOTE_MARKER);
@@ -367,17 +375,27 @@ void draw_pads() {
 
 void draw_settings() {
 	int i = 0;
+
+	// midi channel
 	u8 c = DARK_GRAY;
 	for (int row = SETTINGS_MIDI_ROW_1; row >= SETTINGS_MIDI_ROW_2; row--) {
 		for (int column = 0; column < COLUMN_COUNT; column++) {
 			c = DARK_GRAY;
-			if (i == memory.midi_channel) {
+			if (i == memory.settings.midi_channel) {
 				c = WHITE;
 			}
 			draw_pad(row, column, c);
 			i++;
 		}
 	}
+
+	// version
+	draw_binary_row(SETTINGS_VERSION_ROW, memory.settings.version);
+
+	// auto-load button
+	draw_pad(SETTINGS_MISC_ROW, SETTINGS_AUTO_LOAD_COLUMN, memory.settings.auto_load ? WHITE : DARK_GRAY);
+
+	// patterns
 	for (int column = 0; column < COLUMN_COUNT; column++) {
 		draw_pad(SETTINGS_PATTERN_ROW, column, column == c_pattern ? PATTERN_SELECTED_COLOR : PATTERN_COLOR);
 	}
@@ -413,7 +431,7 @@ u8 get_velocity(Stage stage) {
 
 void note_off() {
 	if (current_note != OUT_OF_RANGE) {
-		hal_send_midi(USBMIDI, NOTEOFF | memory.midi_channel, current_note, 0);
+		hal_send_midi(USBMIDI, NOTEOFF | memory.settings.midi_channel, current_note, 0);
 		current_note = OUT_OF_RANGE;
 	}
 }
@@ -614,6 +632,12 @@ void load() {
 	load_stages();
 }
 
+void load_settings() {
+	clear();
+	hal_read_flash(0, (u8*)&memory.settings, sizeof(memory.settings));
+	draw();
+}
+
 void change_pattern(u8 p_index) {
 	c_pattern = p_index;
 	c_stage = c_extend = c_repeat = 0;
@@ -624,27 +648,43 @@ void change_pattern(u8 p_index) {
 
 /***** handlers *****/
 
-void on_pad(u8 index, u8 row, u8 column, u8 value) {
-
+void on_settings(u8 index, u8 row, u8 column, u8 value) {
 	if (value) {
-		if (in_settings) {
-			u8 c = memory.midi_channel;
-			if (row == SETTINGS_MIDI_ROW_1) {
-				c = column;
-			} else if (row == SETTINGS_MIDI_ROW_1) {
-				c = column + 8;
-			} else if (row == SETTINGS_PATTERN_ROW) {
-				change_pattern(column);
-				draw_settings();
-			}
-			if (c != memory.midi_channel) {
-				all_notes_off(memory.midi_channel);
-				memory.midi_channel = c;
-				draw_settings();
-			}
-			return;
+		u8 c = memory.settings.midi_channel;
+
+		if (row == SETTINGS_MIDI_ROW_1) {
+			c = column;
+
+		} else if (row == SETTINGS_MIDI_ROW_2) {
+			c = column + 8;
+
+		} else if (row == SETTINGS_PATTERN_ROW) {
+			change_pattern(column);
+			draw_settings();
+
+		} else if (row == SETTINGS_MISC_ROW && column == SETTINGS_AUTO_LOAD_COLUMN) {
+			memory.settings.auto_load = !memory.settings.auto_load;
+			draw_settings();
+
 		}
 
+		// if the MIDI channel changes, make sure there are no stuck notes
+		if (c != memory.settings.midi_channel) {
+			all_notes_off(memory.settings.midi_channel);
+			memory.settings.midi_channel = c;
+			draw_settings();
+		}
+	}
+}
+
+void on_pad(u8 index, u8 row, u8 column, u8 value) {
+
+	if (in_settings) {
+		on_settings(index, row, column, value);
+		return;
+	}
+
+	if (value) {
 		u8 previous = get_grid(row, column);
 		bool turn_on = (previous != current_marker);
 
@@ -671,7 +711,7 @@ void on_button(u8 index, u8 group, u8 offset, u8 value) {
 
 	} else if (index == PANIC_BUTTON) {
 		if (value) {
-			all_notes_off(memory.midi_channel);
+			all_notes_off(memory.settings.midi_channel);
 			draw_by_index(PANIC_BUTTON, PANIC_BUTTON_ON_COLOR);
 		} else {
 			draw_by_index(PANIC_BUTTON, PANIC_BUTTON_OFF_COLOR);
@@ -863,7 +903,7 @@ void tick() {
 			u8 previous_note_column = current_note_column;
 			if (stage.note_count > 0 && stage.note != OUT_OF_RANGE) {
 				u8 n = get_note(stage);
-				hal_send_midi(USBMIDI, NOTEON | memory.midi_channel, n, get_velocity(stage));
+				hal_send_midi(USBMIDI, NOTEON | memory.settings.midi_channel, n, get_velocity(stage));
 				if (!in_settings) {
 					draw_pad(stage.note, c_stage, PLAYING_NOTE_COLOR);
 				}
@@ -873,7 +913,7 @@ void tick() {
 			}
 
 			if (stage.legato > 0 && previous_note != OUT_OF_RANGE) {
-				hal_send_midi(USBMIDI, NOTEOFF | memory.midi_channel, previous_note, 0);
+				hal_send_midi(USBMIDI, NOTEOFF | memory.settings.midi_channel, previous_note, 0);
 				if (!in_settings) {
 					draw_pad(previous_note_row, previous_note_column, NOTE_MARKER);
 				}
@@ -949,13 +989,13 @@ void pulse() {
 		u8 previous_note = current_note;
 		if (current.note_count > 0 && current.note != OUT_OF_RANGE) {
 			u8 n = get_note(current);
-			hal_send_midi(USBMIDI, NOTEON | memory.midi_channel, n, get_velocity(current));
+			hal_send_midi(USBMIDI, NOTEON | memory.settings.midi_channel, n, get_velocity(current));
 			current_note = n;
 		}
 
 		if (current.legato > 0) {
 			if (previous_note != OUT_OF_RANGE) {
-				hal_send_midi(USBMIDI, NOTEOFF | memory.midi_channel, previous_note, 0);
+				hal_send_midi(USBMIDI, NOTEOFF | memory.settings.midi_channel, previous_note, 0);
 			}
 		}
 	}
@@ -1198,7 +1238,7 @@ void app_timer_event()
 
 /***** initialization *****/
 
-void set_colors() {
+void colors_init() {
 
 	palette[BLACK] = (Color){0, 0, 0};
 	palette[DARK_GRAY] = (Color){C_LO, C_LO, C_LO};
@@ -1238,17 +1278,34 @@ void set_colors() {
 
 }
 
+void settings_init() {
+	memory.settings.version = APP_VERSION;
+	memory.settings.auto_load = false;
+	memory.settings.tempo = 120;
+	memory.settings.clock_divide = 6;
+	memory.settings.midi_channel = 0;
+	memory.settings.midi_ports = 3;
+}
+
 void app_init(const u16 *adc_raw)
 {
 
+	// initialize some things
+	colors_init();
+	settings_init();
+	warning(SKY_BLUE);
+
+	// make sure stages are clear
 	for (int s = 0; s < 8; s++) {
 		stages[s] = (Stage) { 0, OUT_OF_RANGE, 0, 0, 0, 0, 0, 0, 0 };
 	}
 
-	set_colors();
-	warning(SKY_BLUE);
+	// load just the settings, so we can check whether to load all patterns
+	load_settings();
+	if (memory.settings.auto_load) {
+		load();
+	}
 
-//	load();
 	c_pattern = 0;
 	draw();
 

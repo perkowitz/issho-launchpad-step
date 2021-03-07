@@ -9,6 +9,7 @@
 #define COLUMN_COUNT 8
 
 /***** application constants *****/
+#define APP_VERSION 1
 #define INTERNAL 0
 #define EXTERNAL 1
 #define OUT_OF_RANGE 255
@@ -78,6 +79,9 @@
 
 #define SETTINGS_MIDI_ROW_1 1
 #define SETTINGS_MIDI_ROW_2 0
+#define SETTINGS_VERSION_ROW 5
+#define SETTINGS_MISC_ROW 4
+#define SETTINGS_AUTO_LOAD_COLUMN 0
 #define SETTINGS_PATTERN_ROW 7
 #define PATTERNS_GROUP LEFT
 #define PATTERNS_OFFSET_LO 4
@@ -103,8 +107,21 @@ typedef struct Pattern {
 	u8 mods[ROW_COUNT];
 } Pattern;
 
-typedef struct Memory {
+typedef struct Settings {
+	u8 version;
+	u8 auto_load;
+	u8 tempo;
+	u8 clock_divide;
 	u8 midi_channel;
+	u8 midi_ports;
+	u8 reserved1;
+	u8 reserved2;
+	u8 reserved3;
+	u8 reserved4;
+} Settings;
+
+typedef struct Memory {
+	Settings settings;
 	Pattern patterns[PATTERN_COUNT];
 } Memory;
 
