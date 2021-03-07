@@ -470,6 +470,15 @@ void update_stage(u8 row, u8 column, u8 marker, bool turn_on) {
 		case LEGATO_MARKER:
 			stages[column].legato += inc;
 			break;
+
+		case SKIP_MARKER:
+			stages[column].skip += inc;
+			break;
+
+		case RANDOM_MARKER:
+			stages[column].skip += inc;
+			break;
+
 	}
 
 }
@@ -646,6 +655,7 @@ void on_button(u8 index, u8 group, u8 offset, u8 value) {
 						n = SHARP_MARKER;
 					}
 					break;
+
 				case OCTAVE_UP_MARKER:
 					if (current_marker == OCTAVE_UP_MARKER) {
 						n = OCTAVE_DOWN_MARKER;
@@ -653,6 +663,7 @@ void on_button(u8 index, u8 group, u8 offset, u8 value) {
 						n = OCTAVE_UP_MARKER;
 					}
 					break;
+
 				case VELOCITY_UP_MARKER:
 					if (current_marker == VELOCITY_UP_MARKER) {
 						n = VELOCITY_DOWN_MARKER;
@@ -660,6 +671,7 @@ void on_button(u8 index, u8 group, u8 offset, u8 value) {
 						n = VELOCITY_UP_MARKER;
 					}
 					break;
+
 				case EXTEND_MARKER:
 					if (current_marker == EXTEND_MARKER) {
 						n = REPEAT_MARKER;
@@ -667,6 +679,7 @@ void on_button(u8 index, u8 group, u8 offset, u8 value) {
 						n = EXTEND_MARKER;
 					}
 					break;
+
 				case TIE_MARKER:
 					if (current_marker == TIE_MARKER) {
 						n = SKIP_MARKER;
@@ -674,6 +687,7 @@ void on_button(u8 index, u8 group, u8 offset, u8 value) {
 						n = TIE_MARKER;
 					}
 					break;
+
 				case LEGATO_MARKER:
 					if (current_marker == LEGATO_MARKER) {
 						n = RANDOM_MARKER;
@@ -681,6 +695,7 @@ void on_button(u8 index, u8 group, u8 offset, u8 value) {
 						n = LEGATO_MARKER;
 					}
 					break;
+
 				default:
 					// neither MARKER_OFF nor MARKER_NOTE have alternate values
 					n = m;
@@ -797,7 +812,12 @@ void tick() {
 		}
 		if (c_repeat > stage.repeat) {
 			c_repeat = 0;
+			u8 previous_stage = c_stage;
 			c_stage = (c_stage + 1) % STAGE_COUNT;
+			// if every stage is set to skip, it will replay the current stage
+			while (stages[c_stage].skip > 0 && c_stage != previous_stage) {
+				c_stage = (c_stage + 1) % STAGE_COUNT;
+			}
 		}
 
 

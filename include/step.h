@@ -93,6 +93,8 @@ typedef struct Stage {
 	s8 repeat;
 	s8 tie;
 	s8 legato;
+	s8 skip;
+	s8 random;
 } Stage;
 
 typedef struct Pattern {
