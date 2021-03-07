@@ -54,6 +54,16 @@ const u8 note_map[8] = { 0, 2, 4, 5, 7, 9, 11, 12 };  // maps the major scale to
 const u8 marker_map[8] = { OFF_MARKER, NOTE_MARKER, SHARP_MARKER, OCTAVE_UP_MARKER,
 		VELOCITY_UP_MARKER, EXTEND_MARKER, TIE_MARKER, LEGATO_MARKER };
 
+#define RANDOM_MARKER_COUNT 10
+const u8 random_markers[RANDOM_MARKER_COUNT] = {
+		OFF_MARKER,
+		OCTAVE_UP_MARKER, OCTAVE_DOWN_MARKER,
+		VELOCITY_UP_MARKER, VELOCITY_DOWN_MARKER,
+		EXTEND_MARKER, REPEAT_MARKER,
+		TIE_MARKER, SKIP_MARKER,
+		LEGATO_MARKER
+};
+
 static Memory memory;
 //static Pattern patterns[PATTERN_COUNT];
 static u8 c_pattern = 0;
@@ -411,6 +421,81 @@ void note_off() {
 // update_stage updates stage settings when a marker is changed.
 //   if turn_on=true, a marker was added; if false, a marker was removed.
 //   for some markers (NOTE), row placement matters.
+void update_stage2(Stage *stage, u8 row, u8 marker, bool turn_on) {
+
+	s8 inc = turn_on ? 1 : -1;
+
+	switch (marker) {
+		case NOTE_MARKER:
+			if (turn_on && stage->note_count > 0) {
+//				u8 old_note = stage->note;
+				stage->note_count--;
+				stage->note = OUT_OF_RANGE;
+//				set_and_draw_grid(old_note, column, OFF_MARKER);
+			}
+			stage->note_count += inc;
+			if (turn_on) {
+				stage->note = row;
+			} else {
+				stage->note = OUT_OF_RANGE;
+			}
+			break;
+
+		case SHARP_MARKER:
+			stage->accidental += inc;
+			break;
+
+		case FLAT_MARKER:
+			stage->accidental -= inc;
+			break;
+
+		case OCTAVE_UP_MARKER:
+			stage->octave += inc;
+			break;
+
+		case OCTAVE_DOWN_MARKER:
+			stage->octave -= inc;
+			break;
+
+		case VELOCITY_UP_MARKER:
+			stage->velocity += inc;
+			break;
+
+		case VELOCITY_DOWN_MARKER:
+			stage->velocity -= inc;
+			break;
+
+		case EXTEND_MARKER:
+			stage->extend += inc;
+			break;
+
+		case REPEAT_MARKER:
+			stage->repeat += inc;
+			break;
+
+		case TIE_MARKER:
+			stage->tie += inc;
+			break;
+
+		case LEGATO_MARKER:
+			stage->legato += inc;
+			break;
+
+		case SKIP_MARKER:
+			stage->skip += inc;
+			break;
+
+		case RANDOM_MARKER:
+			stage->random += inc;
+			break;
+
+	}
+
+}
+
+// update_stage updates stage settings when a marker is changed.
+//   if turn_on=true, a marker was added; if false, a marker was removed.
+//   for some markers (NOTE), row placement matters.
 void update_stage(u8 row, u8 column, u8 marker, bool turn_on) {
 
 	s8 inc = turn_on ? 1 : -1;
@@ -476,13 +561,12 @@ void update_stage(u8 row, u8 column, u8 marker, bool turn_on) {
 			break;
 
 		case RANDOM_MARKER:
-			stages[column].skip += inc;
+			stages[column].random += inc;
 			break;
 
 	}
 
 }
-
 
 /***** save and load *****/
 
@@ -754,12 +838,18 @@ void tick() {
 			}
 		}
 
+		// copy the stage and apply randomness to it if needed.
+		Stage stage = stages[c_stage];
+		for (int i = 0; i < stage.random; i++) {
+			u8 r = rand() % RANDOM_MARKER_COUNT;
+			update_stage2(&stage, 0, random_markers[r], true);
+		}
+
 		// if it's a tie or extension>0, do nothing
 		// if it's legato, send previous note off after new note on
 		// otherwise, send previous note off first
 		// also highlight the current playing note on pads in PLAYING_NOTE_COLOR
 		// and then turn it back to NOTE_MARKER when it stops
-		Stage stage = stages[c_stage];
 		if (stage.tie <= 0 && c_extend == 0) {
 			if (stage.legato <= 0 && current_note != OUT_OF_RANGE) {
 				note_off();
