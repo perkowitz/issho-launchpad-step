@@ -101,6 +101,11 @@ typedef struct Pattern {
 	u8 mods[ROW_COUNT];
 } Pattern;
 
+typedef struct Memory {
+	u8 midi_channel;
+	Pattern patterns[PATTERN_COUNT];
+} Memory;
+
 /***** colors *****/
 
 typedef struct Color {
