@@ -304,7 +304,7 @@ void draw_markers() {
 	set_and_draw_button(MARKER_GROUP, 7, LEGATO_MARKER);
 	current_marker_index = 1;
 	current_marker = marker_map[current_marker_index];
-	draw_by_index(DISPLAY_BUTTON, current_marker);
+//	draw_by_index(DISPLAY_BUTTON, current_marker);
 }
 
 void draw_function_button(u8 button_index) {
@@ -688,7 +688,7 @@ void on_button(u8 index, u8 group, u8 offset, u8 value) {
 			}
 
 			if (n != OUT_OF_RANGE) {
-				plot_led(TYPEPAD, DISPLAY_BUTTON, palette[n]);
+//				plot_led(TYPEPAD, DISPLAY_BUTTON, palette[n]);
 				current_marker = n;
 				current_marker_index = offset;
 				draw_button(MARKER_GROUP, previous_marker_index, marker_map[previous_marker_index]);
