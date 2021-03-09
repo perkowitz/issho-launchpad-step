@@ -74,6 +74,10 @@ static u8 warning_blink = 0;
 static bool is_running = false;
 static bool is_playing = false;
 static bool in_settings = false;
+static bool song_on = false;
+static bool shuffle_on = false;
+static bool fill_on = false;
+static bool water_on = false;
 static u8 current_marker = OFF_MARKER;
 static u8 current_marker_index = 0;
 static u8 current_note = OUT_OF_RANGE;
@@ -126,7 +130,7 @@ void warning(u8 level) {
 #define DEBUG true
 void debug(u8 index, u8 level) {
 	if (DEBUG && level != OUT_OF_RANGE) {
-		plot_led(TYPEPAD, (index + 1) * 10, palette[level]);
+		plot_led(TYPEPAD, (index + 1) * 10 + 9, palette[level]);
 	}
 }
 
@@ -347,6 +351,18 @@ void draw_function_button(u8 button_index) {
 			}
 			draw_by_index(button_index, c);
 			break;
+		case SONG_BUTTON:
+			draw_by_index(button_index, song_on ? PERF_BUTTON_ON_COLOR : SONG_BUTTON_COLOR);
+			break;
+		case SHUFFLE_BUTTON:
+			draw_by_index(button_index, shuffle_on ? PERF_BUTTON_ON_COLOR : SHUFFLE_BUTTON_COLOR);
+			break;
+		case FILL_BUTTON:
+			draw_by_index(button_index, fill_on ? PERF_BUTTON_ON_COLOR : FILL_BUTTON_COLOR);
+			break;
+		case WATER_BUTTON:
+			draw_by_index(button_index, WATER_BUTTON_COLOR);
+			break;
 		case LOAD_BUTTON:
 		case CLEAR_BUTTON:
 			draw_by_index(button_index, BUTTON_OFF_COLOR);
@@ -359,8 +375,12 @@ void draw_function_buttons() {
 	draw_function_button(PANIC_BUTTON);
 	draw_function_button(SETTINGS_BUTTON);
 	draw_function_button(RESET_BUTTON);
+	draw_function_button(SONG_BUTTON);
+	draw_function_button(SHUFFLE_BUTTON);
+	draw_function_button(FILL_BUTTON);
 	draw_function_button(LOAD_BUTTON);
 	draw_function_button(CLEAR_BUTTON);
+	draw_function_button(WATER_BUTTON);
 }
 
 void draw_pads() {
@@ -408,10 +428,46 @@ void draw_patterns() {
 	}
 }
 
+void draw_droplet() {
+	u8 row = rand() % ROW_COUNT;
+	u8 column = rand() % COLUMN_COUNT;
+	u8 index = pad_index(row, column);
+	if (index != OUT_OF_RANGE) {
+		u8 r = rand() % 4;
+		u8 g = rand() % 8;
+		u8 b = rand() % 32 + 16;
+		Color c = (Color){r, g, b};
+		plot_led(TYPEPAD, index, c);
+	}
+}
+
+void draw_water() {
+	for (u8 group = 0; group < 4; group++) {
+		for (u8 offset = 0; offset < 8; offset++) {
+			draw_button(group, offset, BLACK);
+		}
+	}
+	Color c;
+	for (u8 row = 0; row < ROW_COUNT; row++) {
+		for (u8 column = 0; column < COLUMN_COUNT; column++) {
+			u8 index = pad_index(row, column);
+			if (index != OUT_OF_RANGE) {
+				u8 r = rand() % 3;
+				u8 g = rand() % 16;
+				u8 b = rand() % 32 + 16;
+				c = (Color){r, g, b};
+				plot_led(TYPEPAD, index, c);
+			}
+		}
+	}
+	plot_led(TYPEPAD, WATER_BUTTON, c);
+}
+
 void draw() {
 	draw_function_buttons();
 	draw_markers();
 	draw_patterns();
+	draw_pads();
 }
 
 /***** stages *****/
@@ -757,6 +813,32 @@ void on_button(u8 index, u8 group, u8 offset, u8 value) {
 			draw_function_button(TIMER_BUTTON);
 		}
 
+	} else if (index == SONG_BUTTON) {
+		if (value) {
+			song_on = !song_on;
+			draw_function_button(SONG_BUTTON);
+		}
+
+	} else if (index == SHUFFLE_BUTTON) {
+		if (value) {
+			shuffle_on = !shuffle_on;
+			draw_function_button(SHUFFLE_BUTTON);
+		}
+
+	} else if (index == FILL_BUTTON) {
+		fill_on = (value > 0);
+		draw_function_button(FILL_BUTTON);
+
+	} else if (index == WATER_BUTTON) {
+		if (value) {
+			water_on = !water_on;
+			if (water_on) {
+				draw_water();
+			} else {
+				draw();
+			}
+		}
+
 	} else if (group == PATTERNS_GROUP && offset >= PATTERNS_OFFSET_LO && offset <= PATTERNS_OFFSET_HI) {
 		change_pattern(offset - PATTERNS_OFFSET_LO);
 		draw_pads();
@@ -870,6 +952,12 @@ void tick() {
 			status_light(BLACK);
 		}
 
+		// update water if it's on
+		if (water_on) {
+//			draw_droplet();
+			draw_water();
+		}
+
 		// reset at the beginning of the measure (if reset is set)
 		// reset=1: reset every measure; reset=2: every other measure
 		if (c_beat == 0 && c_tick == 0) {
@@ -921,16 +1009,16 @@ void tick() {
 		}
 
 		// echo the current step activity on the left buttons
-		debug(1, stage.note_count > 0 ? NOTE_MARKER : OFF_MARKER);
-		debug(1, stage.accidental > 0 ? SHARP_MARKER : OUT_OF_RANGE);
-		debug(1, stage.accidental < 0 ? FLAT_MARKER : OUT_OF_RANGE);
-		debug(1, stage.tie > 0 ? TIE_MARKER : OUT_OF_RANGE);
-		debug(2, stage.octave > 0 ? OCTAVE_UP_MARKER : OFF_MARKER);
-		debug(2, stage.octave < 0 ? OCTAVE_DOWN_MARKER : OUT_OF_RANGE);
-		debug(3, stage.velocity > 0 ? VELOCITY_UP_MARKER : OFF_MARKER);
-		debug(3, stage.velocity < 0 ? VELOCITY_DOWN_MARKER : OUT_OF_RANGE);
-		debug(3, stage.legato > 0 ? LEGATO_MARKER : OFF_MARKER);
-		debug(3, stage.legato > 0 ? LEGATO_MARKER : OFF_MARKER);
+//		debug(1, stage.note_count > 0 ? NOTE_MARKER : OFF_MARKER);
+//		debug(1, stage.accidental > 0 ? SHARP_MARKER : OUT_OF_RANGE);
+//		debug(1, stage.accidental < 0 ? FLAT_MARKER : OUT_OF_RANGE);
+//		debug(1, stage.tie > 0 ? TIE_MARKER : OUT_OF_RANGE);
+//		debug(2, stage.octave > 0 ? OCTAVE_UP_MARKER : OFF_MARKER);
+//		debug(2, stage.octave < 0 ? OCTAVE_DOWN_MARKER : OUT_OF_RANGE);
+//		debug(3, stage.velocity > 0 ? VELOCITY_UP_MARKER : OFF_MARKER);
+//		debug(3, stage.velocity < 0 ? VELOCITY_DOWN_MARKER : OUT_OF_RANGE);
+//		debug(3, stage.legato > 0 ? LEGATO_MARKER : OFF_MARKER);
+//		debug(3, stage.legato > 0 ? LEGATO_MARKER : OFF_MARKER);
 
 		// now increment current extension
 		// if that would exceed the stage's extension count, increment the repeats count
@@ -1029,6 +1117,7 @@ void blink() {
 
 void app_surface_event(u8 type, u8 index, u8 value)
 {
+
     switch (type)
     {
         case  TYPEPAD:
