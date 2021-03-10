@@ -111,8 +111,7 @@ typedef struct Stage {
 
 typedef struct Pattern {
 	u8 reset;
-	u8 grid[ROW_COUNT][COLUMN_COUNT];
-	u8 mods[ROW_COUNT];
+	u8 grid[ROW_COUNT][COLUMN_COUNT + 1];
 } Pattern;
 
 typedef struct Settings {

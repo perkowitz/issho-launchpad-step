@@ -495,17 +495,17 @@ void note_off() {
 // update_stage updates stage settings when a marker is changed.
 //   if turn_on=true, a marker was added; if false, a marker was removed.
 //   for some markers (NOTE), row placement matters.
-void update_stage2(Stage *stage, u8 row, u8 marker, bool turn_on) {
+void update_stage(Stage *stage, u8 row, u8 column, u8 marker, bool turn_on) {
 
 	s8 inc = turn_on ? 1 : -1;
 
 	switch (marker) {
 		case NOTE_MARKER:
 			if (turn_on && stage->note_count > 0) {
-//				u8 old_note = stage->note;
+				u8 old_note = stage->note;
 				stage->note_count--;
 				stage->note = OUT_OF_RANGE;
-//				set_and_draw_grid(old_note, column, OFF_MARKER);
+				set_and_draw_grid(old_note, column, OFF_MARKER);
 			}
 			stage->note_count += inc;
 			if (turn_on) {
@@ -567,80 +567,6 @@ void update_stage2(Stage *stage, u8 row, u8 marker, bool turn_on) {
 
 }
 
-// update_stage updates stage settings when a marker is changed.
-//   if turn_on=true, a marker was added; if false, a marker was removed.
-//   for some markers (NOTE), row placement matters.
-void update_stage(u8 row, u8 column, u8 marker, bool turn_on) {
-
-	s8 inc = turn_on ? 1 : -1;
-
-	switch (marker) {
-		case NOTE_MARKER:
-			if (turn_on && stages[column].note_count > 0) {
-				u8 old_note = stages[column].note;
-				stages[column].note_count--;
-				stages[column].note = OUT_OF_RANGE;
-				set_and_draw_grid(old_note, column, OFF_MARKER);
-			}
-			stages[column].note_count += inc;
-			if (turn_on) {
-				stages[column].note = row;
-			} else {
-				stages[column].note = OUT_OF_RANGE;
-			}
-			break;
-
-		case SHARP_MARKER:
-			stages[column].accidental += inc;
-			break;
-
-		case FLAT_MARKER:
-			stages[column].accidental -= inc;
-			break;
-
-		case OCTAVE_UP_MARKER:
-			stages[column].octave += inc;
-			break;
-
-		case OCTAVE_DOWN_MARKER:
-			stages[column].octave -= inc;
-			break;
-
-		case VELOCITY_UP_MARKER:
-			stages[column].velocity += inc;
-			break;
-
-		case VELOCITY_DOWN_MARKER:
-			stages[column].velocity -= inc;
-			break;
-
-		case EXTEND_MARKER:
-			stages[column].extend += inc;
-			break;
-
-		case REPEAT_MARKER:
-			stages[column].repeat += inc;
-			break;
-
-		case TIE_MARKER:
-			stages[column].tie += inc;
-			break;
-
-		case LEGATO_MARKER:
-			stages[column].legato += inc;
-			break;
-
-		case SKIP_MARKER:
-			stages[column].skip += inc;
-			break;
-
-		case RANDOM_MARKER:
-			stages[column].random += inc;
-			break;
-
-	}
-
-}
 
 /***** save and load *****/
 
@@ -673,7 +599,7 @@ void load_stages() {
 	for (int row = 0; row < ROW_COUNT; row++) {
 		for (int column = 0; column < COLUMN_COUNT; column++) {
 			u8 value = get_grid(row, column);
-			update_stage(row, column, value, true);
+			update_stage(&stages[column], row, column, value, true);
 			if (!in_settings) {
 				draw_pad(row, column, value);
 			}
@@ -745,12 +671,12 @@ void on_pad(u8 index, u8 row, u8 column, u8 value) {
 		bool turn_on = (previous != current_marker);
 
 		// remove the old marker that was at this row
-		update_stage(row, column, previous, false);
+		update_stage(&stages[column], row, column, previous, false);
 
 		if (turn_on) {
 			set_and_draw_grid(row, column, current_marker);
 			// add the new marker
-			update_stage(row, column, current_marker, true);
+			update_stage(&stages[column], row, column, current_marker, true);
 		} else {
 			set_and_draw_grid(row, column, OFF_MARKER);
 		}
@@ -970,7 +896,7 @@ void tick() {
 		Stage stage = stages[c_stage];
 		for (int i = 0; i < stage.random; i++) {
 			u8 r = rand() % RANDOM_MARKER_COUNT;
-			update_stage2(&stage, 0, random_markers[r], true);
+			update_stage(&stage, 0, c_stage, random_markers[r], true);
 		}
 
 		// if it's a tie or extension>0, do nothing
