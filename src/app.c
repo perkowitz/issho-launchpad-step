@@ -47,7 +47,7 @@
 static const u16 *g_ADC = 0;   // ADC frame pointer
 static u8 hw_buttons[BUTTON_COUNT] = {0};
 static u8 clock = INTERNAL;
-static Stage stages[STAGE_COUNT];
+static Stage stages[GRID_COLUMNS];
 static Color palette[PSIZE];
 static u8 rainbow[8];
 const u8 note_map[8] = { 0, 2, 4, 5, 7, 9, 11, 12 };  // maps the major scale to note intervals
@@ -268,7 +268,7 @@ u8 get_button(u8 group, u8 offset) {
 void set_pattern_grid(u8 p_index, u8 row, u8 column, u8 value) {
 	if (p_index >= 0 && p_index < PATTERN_COUNT &&
 			row >= 0 && row < ROW_COUNT &&
-			column >= 0 && column < COLUMN_COUNT) {
+			column >= 0 && column < GRID_COLUMNS) {
 		memory.patterns[p_index].grid[row][column] = value;
 	}
 }
@@ -276,7 +276,7 @@ void set_pattern_grid(u8 p_index, u8 row, u8 column, u8 value) {
 u8 get_pattern_grid(u8 p_index, u8 row, u8 column) {
 	if (p_index >= 0 && p_index < PATTERN_COUNT &&
 			row >= 0 && row < ROW_COUNT &&
-			column >= 0 && column < COLUMN_COUNT) {
+			column >= 0 && column < GRID_COLUMNS) {
 		return memory.patterns[p_index].grid[row][column];
 	} else {
 		return OUT_OF_RANGE;
@@ -289,7 +289,11 @@ void set_grid(u8 row, u8 column, u8 value) {
 
 void set_and_draw_grid(u8 row, u8 column, u8 value) {
 	set_pattern_grid(c_pattern, row, column, value);
-	draw_pad(row, column, value);
+	if (column == PATTERN_MOD_COLUMN) {
+		draw_button(PATTERN_MOD_GROUP, row, value);
+	} else {
+		draw_pad(row, column, value);
+	}
 }
 
 u8 get_grid(u8 row, u8 column) {
@@ -385,12 +389,13 @@ void draw_function_buttons() {
 
 void draw_pads() {
 	for (int row = 0; row < ROW_COUNT; row++) {
+		u8 c = get_grid(row, PATTERN_MOD_COLUMN);
+		draw_button(PATTERN_MOD_GROUP, row, c);
 		for (int column = 0; column < COLUMN_COUNT; column++) {
-			u8 c = get_grid(row, column);
+			c = get_grid(row, column);
 			draw_pad(row, column, c);
 		}
 	}
-
 }
 
 void draw_settings() {
@@ -476,11 +481,14 @@ u8 get_note(Stage stage) {
 	if (stage.note == OUT_OF_RANGE) {
 		return OUT_OF_RANGE;
 	}
-	return (stage.octave + DEFAULT_OCTAVE) * 12 + note_map[stage.note] + stage.accidental;
+	u8 n = stages[PATTERN_MOD_COLUMN].note == OUT_OF_RANGE ? 0 : stages[PATTERN_MOD_COLUMN].note;
+	return (DEFAULT_OCTAVE + stage.octave + stages[PATTERN_MOD_COLUMN].octave) * 12 +
+			note_map[stage.note + n] +
+			stage.accidental + stages[PATTERN_MOD_COLUMN].accidental;
 }
 
 u8 get_velocity(Stage stage) {
-	s8 v = DEFAULT_VELOCITY + stage.velocity * VELOCITY_DELTA;
+	s8 v = DEFAULT_VELOCITY + (stage.velocity + stages[PATTERN_MOD_COLUMN].velocity) * VELOCITY_DELTA;
 	v = v < 1 ? 1 : (v > 127 ? 127 : v);
 	return v;
 }
@@ -571,7 +579,7 @@ void update_stage(Stage *stage, u8 row, u8 column, u8 marker, bool turn_on) {
 /***** save and load *****/
 
 void clear_stages() {
-	for (int s = 0; s < 8; s++) {
+	for (int s = 0; s < GRID_COLUMNS; s++) {
 		stages[s] = (Stage) { 0, OUT_OF_RANGE, 0, 0, 0, 0, 0, 0, 0 };
 	}
 }
@@ -580,10 +588,10 @@ void clear() {
 	clear_stages();
 	for (int p = 0; p < PATTERN_COUNT; p++) {
 		for (int row = 0; row < ROW_COUNT; row++) {
-			for (int column = 0; column < COLUMN_COUNT; column++) {
-				set_pattern_grid(p, row, column, BLACK);
+			for (int column = 0; column < GRID_COLUMNS; column++) {
+				set_pattern_grid(p, row, column, OFF_MARKER);
 				if (p == c_pattern) {
-					draw_pad(row, column, BLACK);
+					draw_pad(row, column, OFF_MARKER);
 				}
 			}
 		}
@@ -597,11 +605,15 @@ void save() {
 
 void load_stages() {
 	for (int row = 0; row < ROW_COUNT; row++) {
-		for (int column = 0; column < COLUMN_COUNT; column++) {
+		for (int column = 0; column < GRID_COLUMNS; column++) {
 			u8 value = get_grid(row, column);
 			update_stage(&stages[column], row, column, value, true);
 			if (!in_settings) {
-				draw_pad(row, column, value);
+				if (column == PATTERN_MOD_COLUMN) {
+					draw_button(PATTERN_MOD_GROUP, row, value);
+				} else {
+					draw_pad(row, column, value);
+				}
 			}
 		}
 	}
@@ -765,6 +777,27 @@ void on_button(u8 index, u8 group, u8 offset, u8 value) {
 			}
 		}
 
+	} else if (group == PATTERN_MOD_GROUP) {
+		// same logic as in on_pad() but for buttons
+		if (value) {
+			u8 previous = get_grid(offset, PATTERN_MOD_COLUMN);
+			bool turn_on = (previous != current_marker);
+
+			// remove the old marker that was at this row
+			update_stage(&stages[PATTERN_MOD_COLUMN], offset, PATTERN_MOD_COLUMN, previous, false);
+
+			if (turn_on) {
+				set_grid(offset, PATTERN_MOD_COLUMN, current_marker);
+				draw_button(PATTERN_MOD_GROUP, offset, current_marker);
+				// add the new marker
+				update_stage(&stages[PATTERN_MOD_COLUMN], offset, PATTERN_MOD_COLUMN, current_marker, true);
+			} else {
+				set_grid(offset, PATTERN_MOD_COLUMN, OFF_MARKER);
+				draw_button(PATTERN_MOD_GROUP, offset, OFF_MARKER);
+			}
+		}
+
+
 	} else if (group == PATTERNS_GROUP && offset >= PATTERNS_OFFSET_LO && offset <= PATTERNS_OFFSET_HI) {
 		change_pattern(offset - PATTERNS_OFFSET_LO);
 		draw_pads();
@@ -894,10 +927,14 @@ void tick() {
 
 		// copy the stage and apply randomness to it if needed.
 		Stage stage = stages[c_stage];
-		for (int i = 0; i < stage.random; i++) {
+		for (int i = 0; i < stage.random + stages[PATTERN_MOD_COLUMN].random; i++) {
 			u8 r = rand() % RANDOM_MARKER_COUNT;
 			update_stage(&stage, 0, c_stage, random_markers[r], true);
 		}
+
+		// add in pattern mods (note & velocity mods computed later; random already computed)
+		stage.extend += stages[PATTERN_MOD_COLUMN].extend;
+		stage.repeat += stages[PATTERN_MOD_COLUMN].repeat;
 
 		// if it's a tie or extension>0, do nothing
 		// if it's legato, send previous note off after new note on

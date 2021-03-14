@@ -30,6 +30,14 @@
 #define DEFAULT_VELOCITY 63
 #define VELOCITY_DELTA 31
 
+// button groups
+#define TOP 0
+#define BOTTOM 1
+#define LEFT 2
+#define RIGHT 3
+#define GROUP_COUNT 4
+#define OFFSET_COUNT 8
+
 // markers
 #define MARKER_GROUP BOTTOM
 #define OFF_MARKER BLACK
@@ -64,14 +72,6 @@
 #define PATTERN_SELECTED_COLOR WHITE
 #define WATER_BUTTON_COLOR SKY_BLUE
 
-// button groups
-#define TOP 0
-#define BOTTOM 1
-#define LEFT 2
-#define RIGHT 3
-#define GROUP_COUNT 4
-#define OFFSET_COUNT 8
-
 // elements
 #define PLAY_BUTTON 91
 #define PANIC_BUTTON 92
@@ -84,6 +84,10 @@
 #define LOAD_BUTTON 97
 #define CLEAR_BUTTON 98
 #define WATER_BUTTON 94
+
+#define GRID_COLUMNS (COLUMN_COUNT + 1)
+#define PATTERN_MOD_GROUP RIGHT
+#define PATTERN_MOD_COLUMN COLUMN_COUNT
 
 #define SETTINGS_MIDI_ROW_1 1
 #define SETTINGS_MIDI_ROW_2 0
